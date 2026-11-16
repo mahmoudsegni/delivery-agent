@@ -186,6 +186,13 @@ class StandupService:
         await self.db.commit()
         return f"✅ Linked as {member.name}. You'll get standup prompts here."
 
+    async def member_for_chat(self, chat_id: str) -> TeamMember | None:
+        """The member linked to a Telegram chat, if any."""
+        result = await self.db.execute(
+            select(TeamMember).where(TeamMember.telegram_chat_id == chat_id)
+        )
+        return result.scalar_one_or_none()
+
     async def create_link_code(self, member_id: UUID) -> str:
         """Create a one-time code a member uses to link Telegram."""
         r = standup_state.get_redis()

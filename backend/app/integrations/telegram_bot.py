@@ -5,10 +5,12 @@ Run as a standalone process: ``python -m app.integrations.telegram_bot``.
 Responsibilities:
 - Long-poll getUpdates (offset persisted in Redis so restarts don't replay).
 - ``/start <code>``  -> link a Telegram account to a TeamMember.
+- ``/status``        -> reply with the latest morning brief (linked chats only).
+- ``/help``          -> list commands.
 - plain text          -> answer to the current standup question.
 
-All DB / conversation logic lives in StandupService; this module is just the
-transport loop + routing.
+All DB / conversation logic lives in StandupService/BriefService; this module
+is just the transport loop + routing.
 """
 
 import asyncio
@@ -17,6 +19,7 @@ import logging
 from app.config import settings
 from app.integrations import standup_state
 from app.integrations.telegram_client import TelegramClient
+from app.services.brief_service import BriefService
 from app.services.standup_service import StandupService
 from app.tasks.db import create_task_session
 
@@ -25,6 +28,17 @@ logger = logging.getLogger(__name__)
 
 _BACKOFF_START = 1.0
 _BACKOFF_MAX = 30.0
+
+_HELP_TEXT = (
+    "Commands:\n"
+    "/start <code> — link this chat to your account\n"
+    "/status — the latest morning brief\n"
+    "Anything else (plain text) is your standup answer."
+)
+_LINK_HINT = (
+    "👋 This chat isn't linked yet. Generate a code in the app and send "
+    "/start <code>."
+)
 
 
 async def handle_update(update: dict, client: TelegramClient) -> None:
@@ -46,6 +60,27 @@ async def handle_update(update: dict, client: TelegramClient) -> None:
             parts = text.split(maxsplit=1)
             code = parts[1].strip() if len(parts) > 1 else ""
             reply = await service.link_member(code, chat_id, username)
+            await client.send_message(chat_id, reply)
+            return
+
+        if text.startswith("/"):
+            command = text.split(maxsplit=1)[0].split("@")[0]
+            if command == "/status":
+                if await service.member_for_chat(chat_id) is None:
+                    reply = _LINK_HINT
+                else:
+                    brief = await BriefService(session).latest()
+                    reply = (
+                        "No brief yet — the morning brief lands at 08:00. "
+                        "Generate one from the Briefs page."
+                        if brief is None
+                        else BriefService.to_telegram_text(brief)
+                        + "\n\n— full history on the Briefs page."
+                    )
+            elif command == "/help":
+                reply = _HELP_TEXT
+            else:
+                reply = f"Unknown command {command}. Send /help to see what I understand."
             await client.send_message(chat_id, reply)
             return
 

@@ -62,10 +62,7 @@ async def get_latest_brief(
     db: AsyncSession = Depends(get_db),
 ) -> BriefResponse | None:
     """The newest brief, or null when none exists yet (notification poller)."""
-    result = await db.execute(
-        select(Brief).order_by(Brief.brief_date.desc()).limit(1)
-    )
-    brief = result.scalar_one_or_none()
+    brief = await BriefService(db).latest()
     return BriefResponse.of(brief) if brief else None
 
 

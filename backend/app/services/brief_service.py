@@ -119,6 +119,13 @@ class BriefService:
         )
         return result.scalar_one_or_none()
 
+    async def latest(self) -> Brief | None:
+        """The newest brief, or None when none exists yet."""
+        result = await self.db.execute(
+            select(Brief).order_by(Brief.brief_date.desc()).limit(1)
+        )
+        return result.scalar_one_or_none()
+
     async def generate(
         self, on_date: date | None = None, force: bool = False
     ) -> Brief:
