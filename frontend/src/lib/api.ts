@@ -4,7 +4,7 @@ import type {
   DecisionItem, Feature, FeatureCreate, PortfolioResponse, Proposal, RepoCreateResponse,
   RunEventsResponse, Sprint, SprintCreate, StreamDetail, StreamListItem, Task, TaskCreate, TaskUpdate, TeamMember,
   CostByStreamResponse, DeliverySummary, FlowMetrics, IntegrationHealth, RoadmapResponse,
-  SprintBurndown, SprintDashboard, TeamLoadRow, VelocityResponse, WorkforceTrend,
+  SprintBurndown, SprintDashboard, SprintForecast, TeamLoadRow, VelocityResponse, WorkforceTrend,
 } from '../types';
 
 // Base URL for the backend. Empty in local dev (`npm run dev`) so paths stay
@@ -322,6 +322,10 @@ export async function getRoadmap(streamId?: string | null): Promise<RoadmapRespo
 // it was deleted before one was written.
 export async function getBurndown(sprintId: string): Promise<SprintBurndown> {
   return json<SprintBurndown>(await apiFetch(`/api/v1/sprints/${sprintId}/burndown`));
+}
+
+export async function getForecast(sprintId: string): Promise<SprintForecast> {
+  return json<SprintForecast>(await apiFetch(`/api/v1/sprints/${sprintId}/forecast`));
 }
 
 // Forces today's confidence snapshot so a PM does not wait for the 23:30 beat

@@ -163,6 +163,22 @@ export interface SprintBurndown {
   data_points: BurndownDataPoint[];
 }
 
+/** GET /sprints/{id}/forecast — Monte Carlo completion forecast. */
+export interface SprintForecast {
+  /** Sprint already finished — nothing to project. */
+  done?: boolean;
+  /** Fewer than two non-zero throughput weeks — no honest projection. */
+  sufficient_history?: boolean;
+  weekly_throughput?: number[];
+  p50_days?: number;
+  p85_days?: number;
+  /** Fraction (0–1) of simulated runs finishing by the end date. */
+  on_time_probability?: number;
+  iterations?: number;
+  unit?: 'pts' | 'items';
+  remaining?: number;
+}
+
 // Agent types
 export interface AgentRequest {
   type: string;

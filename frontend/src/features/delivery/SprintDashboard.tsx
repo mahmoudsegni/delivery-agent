@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { CalendarClock, RefreshCw } from 'lucide-react';
 import {
-  useBurndown, useSnapshotSprint, useSprintDashboard, useSprints, useVelocity,
+  useBurndown, useForecast, useSnapshotSprint, useSprintDashboard, useSprints, useVelocity,
 } from '../../hooks/useApi';
 import { BarChart, Legend, LineChart, Meter, HBars, shortDate } from '../../ui/charts';
 import { Badge } from '../../ui/Badge';
@@ -40,6 +40,7 @@ export function SprintDashboard({ sprintId, onSelectSprint }: Props) {
   const { data: sprints } = useSprints();
   const { data: dash, isPending, error } = useSprintDashboard(sprintId);
   const { data: burndown } = useBurndown(dash?.sprint_id ?? null);
+  const { data: forecast } = useForecast(dash?.sprint_id ?? null);
   const { data: velocity } = useVelocity(dash?.stream_id ?? null, 8);
   const snapshot = useSnapshotSprint();
   const [showAll, setShowAll] = useState(false);
@@ -215,6 +216,17 @@ export function SprintDashboard({ sprintId, onSelectSprint }: Props) {
             <div className="chart-note">
               History starts {shortDate(historyStart)}. Days without a snapshot stay empty rather
               than reading as zero.
+            </div>
+          )}
+          {forecast && (
+            <div className="chart-note">
+              {forecast.done
+                ? 'Forecast: all work done.'
+                : forecast.sufficient_history === false
+                  ? 'Forecast: needs two non-zero delivery weeks before it can project.'
+                  : forecast.p50_days != null && forecast.p85_days != null && forecast.on_time_probability != null
+                    ? `Forecast: 50% in ${forecast.p50_days}d · 85% in ${forecast.p85_days}d · ${Math.round(forecast.on_time_probability * 100)}% by ${shortDate(dash.end_date)}`
+                    : null}
             </div>
           )}
         </div>

@@ -18,6 +18,7 @@ from app.schemas.sprint import (
     TaskToSprintRequest,
 )
 from app.schemas.task import TaskListResponse, TaskResponse
+from app.services.forecast_service import forecast
 from app.services.sprint_service import (
     PendingReleaseNotesError,
     SprintNotFoundError,
@@ -261,6 +262,21 @@ async def remove_tasks_from_sprint(
             tasks=[TaskResponse.model_validate(t) for t in tasks],
             total=len(tasks),
         )
+    except SprintNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Sprint not found: {sprint_id}",
+        )
+
+
+@router.get("/{sprint_id}/forecast")
+async def get_sprint_forecast(
+    sprint_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Monte Carlo completion forecast: p50/p85 days-to-done + on-time odds."""
+    try:
+        return await forecast(db, sprint_id)
     except SprintNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

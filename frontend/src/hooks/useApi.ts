@@ -11,6 +11,7 @@ import {
   listBriefs, getLatestBrief, generateBrief, askDeliveryManager,
   getSprintDashboard, getTeamLoad, getVelocity, getDeliverySummary, getIntegrationHealth,
   getCostByStream, getWorkforceTrend, getFlowMetrics, getRoadmap, getBurndown, snapshotSprint,
+  getForecast,
 } from '../lib/api';
 
 export const taskKeys = { all: ['tasks'] as const };
@@ -99,6 +100,7 @@ export function useUpdateTask() {
       // dashboards would otherwise sit stale until their next poll.
       qc.invalidateQueries({ queryKey: dashboardKeys.all });
       qc.invalidateQueries({ queryKey: burndownKeys.all });
+      qc.invalidateQueries({ queryKey: forecastKeys.all });
     },
   });
 }
@@ -146,6 +148,7 @@ function useProposalRefresh() {
     // aggregate is downstream of this too.
     qc.invalidateQueries({ queryKey: dashboardKeys.all });
     qc.invalidateQueries({ queryKey: burndownKeys.all });
+    qc.invalidateQueries({ queryKey: forecastKeys.all });
   };
 }
 
@@ -296,6 +299,11 @@ export const burndownKeys = {
   detail: (sprintId: string) => ['burndown', sprintId] as const,
 };
 
+export const forecastKeys = {
+  all: ['forecast'] as const,
+  detail: (sprintId: string) => ['forecast', sprintId] as const,
+};
+
 export function useSprintDashboard(sprintId?: string | null) {
   return useQuery({
     queryKey: dashboardKeys.sprint(sprintId),
@@ -372,6 +380,15 @@ export function useBurndown(sprintId?: string | null) {
   return useQuery({
     queryKey: burndownKeys.detail(sprintId ?? 'none'),
     queryFn: () => getBurndown(sprintId as string),
+    enabled: Boolean(sprintId),
+    refetchInterval: 60_000,
+  });
+}
+
+export function useForecast(sprintId?: string | null) {
+  return useQuery({
+    queryKey: forecastKeys.detail(sprintId ?? 'none'),
+    queryFn: () => getForecast(sprintId as string),
     enabled: Boolean(sprintId),
     refetchInterval: 60_000,
   });
