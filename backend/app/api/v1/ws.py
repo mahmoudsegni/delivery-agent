@@ -5,7 +5,13 @@ import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from app.dependencies import PASSCODE_COOKIE, passcode_ok
+from app.config import settings
+from app.dependencies import (
+    PASSCODE_COOKIE,
+    passcode_locked,
+    passcode_ok,
+    register_passcode_failure,
+)
 from app.ws.manager import ws_manager
 
 router = APIRouter()
@@ -30,9 +36,15 @@ async def websocket_updates(websocket: WebSocket, channel: str = "default") -> N
     """
     # Passcode gate (issue #8): middleware can't cover websockets, and
     # browsers can't send headers on a WS handshake — cookie only.
-    if not passcode_ok(websocket.cookies.get(PASSCODE_COOKIE)):
-        await websocket.close(code=4401)
-        return
+    # Same per-IP rate limiter as the HTTP gate (issue #25).
+    if settings.passcode:
+        ip = websocket.client.host if websocket.client else "unknown"
+        locked = passcode_locked(ip)
+        if locked or not passcode_ok(websocket.cookies.get(PASSCODE_COOKIE)):
+            if not locked:
+                register_passcode_failure(ip)
+            await websocket.close(code=4401)
+            return
     await ws_manager.connect(websocket, channel)
 
     try:

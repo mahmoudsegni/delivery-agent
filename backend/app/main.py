@@ -10,7 +10,13 @@ from fastapi.responses import JSONResponse
 from app.api.v1.router import router as v1_router
 from app.config import settings
 from app.database import async_engine
-from app.dependencies import PASSCODE_COOKIE, passcode_ok
+from app.dependencies import (
+    PASSCODE_COOKIE,
+    clear_passcode_failures,
+    passcode_locked,
+    passcode_ok,
+    register_passcode_failure,
+)
 
 
 @asynccontextmanager
@@ -61,16 +67,21 @@ app.include_router(v1_router, prefix="/api/v1")
 @app.middleware("http")
 async def passcode_gate(request: Request, call_next):
     path = request.url.path
-    if (
-        settings.passcode
-        and request.method != "OPTIONS"
-        and not path.startswith(("/api/v1/passcode", "/api/v1/health"))
-        and not passcode_ok(
-            request.cookies.get(PASSCODE_COOKIE) or request.headers.get("X-Passcode")
-        )
+    if settings.passcode and request.method != "OPTIONS" and not path.startswith(
+        ("/api/v1/passcode", "/api/v1/health")
     ):
-        return JSONResponse(
-            {"detail": "Passcode required. Unlock at /api/v1/passcode or send X-Passcode."},
-            status_code=401,
-        )
+        ip = request.client.host if request.client else "unknown"
+        if passcode_locked(ip):
+            return JSONResponse(
+                {"detail": "Too many attempts. Try again later."}, status_code=429
+            )
+        if not passcode_ok(
+            request.cookies.get(PASSCODE_COOKIE) or request.headers.get("X-Passcode")
+        ):
+            register_passcode_failure(ip)
+            return JSONResponse(
+                {"detail": "Passcode required. Unlock at /api/v1/passcode or send X-Passcode."},
+                status_code=401,
+            )
+        clear_passcode_failures(ip)
     return await call_next(request)

@@ -1,7 +1,7 @@
 """API v1 router aggregating all endpoints."""
 
-from fastapi import APIRouter, Form
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Form, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from app.api.v1 import agent, ws
 from app.api.v1.autopilot import router as autopilot_router
@@ -17,7 +17,13 @@ from app.api.v1.streams import router as streams_router
 from app.api.v1.tasks import router as tasks_router
 from app.api.v1.team import router as team_router
 from app.config import settings
-from app.dependencies import PASSCODE_COOKIE, passcode_ok
+from app.dependencies import (
+    PASSCODE_COOKIE,
+    clear_passcode_failures,
+    passcode_locked,
+    passcode_ok,
+    register_passcode_failure,
+)
 
 router = APIRouter()
 
@@ -70,8 +76,14 @@ async def passcode_page() -> str:
 
 
 @router.post("/passcode")
-async def passcode_submit(passcode: str = Form("")):
+async def passcode_submit(request: Request, passcode: str = Form("")):
+    # Same rate limiter as the gate middleware: the form is the other
+    # guessable path (issue #25).
+    ip = request.client.host if request.client else "unknown"
+    if passcode_locked(ip):
+        return JSONResponse({"detail": "Too many attempts. Try again later."}, status_code=429)
     if passcode_ok(passcode):
+        clear_passcode_failures(ip)
         resp = RedirectResponse("/", status_code=303)
         # ponytail: cookie holds the shared secret itself; signed sessions if
         # this ever protects more than a demo deployment.
@@ -83,4 +95,5 @@ async def passcode_submit(passcode: str = Form("")):
             max_age=30 * 24 * 3600,
         )
         return resp
+    register_passcode_failure(ip)
     return HTMLResponse(_PASSCODE_PAGE.replace("{ERR}", "Wrong passcode."), status_code=401)
