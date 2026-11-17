@@ -95,19 +95,32 @@ async def _run_confidence(monkeypatch, text, *, member=True, fetch=lambda sessio
     return await _run(monkeypatch, text, member=member)
 
 
-async def _run_ask(monkeypatch, text, *, member=True, answer: str | Exception = "Two items slipped"):
-    """Patch AskService.answer at class level; returns (client, asked questions)."""
+async def _run_ask(
+    monkeypatch, *texts, member=True, answer: str | Exception | list[str | Exception] = "Two items slipped"
+):
+    """Patch AskService.answer at class level; returns (replies, questions, histories).
+
+    ``answer`` is one value reused for every call, or a list zipped with ``texts``.
+    """
+    monkeypatch.setattr(telegram_bot, "_ASK_HISTORY", {})  # fresh memory per test
     asked: list[str] = []
+    histories: list[list | None] = []
+    answers = answer if isinstance(answer, list) else [answer] * len(texts)
 
     async def _answer(self, question, history=None):
         asked.append(question)
-        if isinstance(answer, Exception):
-            raise answer
-        return answer
+        histories.append(history)
+        result = answers[len(asked) - 1]
+        if isinstance(result, Exception):
+            raise result
+        return result
 
     monkeypatch.setattr(AskService, "answer", _answer)
-    client, _ = await _run(monkeypatch, text, member=member)
-    return client, asked
+    sent: list[tuple[str, str]] = []
+    for text in texts:
+        client, _ = await _run(monkeypatch, text, member=member)
+        sent.extend(client.sent)
+    return sent, asked, histories
 
 
 async def test_confidence_with_data(monkeypatch):
@@ -162,29 +175,64 @@ async def test_status_unlinked_chat(monkeypatch):
 
 
 async def test_ask_answers_question(monkeypatch):
-    client, asked = await _run_ask(monkeypatch, "/ask what slipped this sprint?")
+    sent, asked, histories = await _run_ask(monkeypatch, "/ask what slipped this sprint?")
     assert asked == ["what slipped this sprint?"]
-    assert client.sent[0][1] == "Two items slipped"
+    assert histories == [None]  # first turn has no memory
+    assert sent[0][1] == "Two items slipped"
+
+
+async def test_ask_followup_receives_previous_turn(monkeypatch):
+    sent, asked, histories = await _run_ask(
+        monkeypatch, "/ask what slipped?", "/ask what about last sprint?"
+    )
+    assert len(asked) == 2
+    assert histories[1] == [
+        {"role": "user", "content": "what slipped?"},
+        {"role": "assistant", "content": "Two items slipped"},
+    ]
+
+
+async def test_ask_llm_failure_leaves_history_empty(monkeypatch):
+    sent, asked, histories = await _run_ask(
+        monkeypatch, "/ask mood?", "/ask anything else?", answer=[RuntimeError("boom"), "ok"]
+    )
+    assert "Couldn't answer that" in sent[0][1]
+    assert sent[1][1] == "ok"
+    assert histories[1] is None  # failed turn appended nothing
+
+
+async def test_ask_history_capped_at_six_messages(monkeypatch):
+    _, _, histories = await _run_ask(
+        monkeypatch, *[f"/ask q{i}" for i in range(9)], answer="a"
+    )
+    assert histories[8] == [
+        {"role": "user", "content": "q5"},
+        {"role": "assistant", "content": "a"},
+        {"role": "user", "content": "q6"},
+        {"role": "assistant", "content": "a"},
+        {"role": "user", "content": "q7"},
+        {"role": "assistant", "content": "a"},
+    ]
 
 
 async def test_ask_bare_command_usage_hint(monkeypatch):
-    client, asked = await _run_ask(monkeypatch, "/ask")
+    sent, asked, _ = await _run_ask(monkeypatch, "/ask")
     assert not asked
-    assert "Usage: /ask" in client.sent[0][1]
+    assert "Usage: /ask" in sent[0][1]
 
 
 async def test_ask_llm_failure_graceful(monkeypatch):
-    client, asked = await _run_ask(
+    sent, asked, _ = await _run_ask(
         monkeypatch, "/ask what's the mood?", answer=RuntimeError("boom")
     )
     assert asked == ["what's the mood?"]
-    assert "Couldn't answer that" in client.sent[0][1]
+    assert "Couldn't answer that" in sent[0][1]
 
 
 async def test_ask_unlinked_chat(monkeypatch):
-    client, asked = await _run_ask(monkeypatch, "/ask anything", member=False)
+    sent, asked, _ = await _run_ask(monkeypatch, "/ask anything", member=False)
     assert not asked
-    assert "/start <code>" in client.sent[0][1]
+    assert "/start <code>" in sent[0][1]
 
 
 async def test_help_lists_commands(monkeypatch):

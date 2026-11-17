@@ -41,13 +41,17 @@ _HELP_TEXT = (
     "/start <code> — link this chat to your account\n"
     "/status — the latest morning brief\n"
     "/confidence — portfolio confidence at a glance\n"
-    "/ask <question> — free-text Q&A over the live snapshot\n"
+    "/ask <question> — free-text Q&A over the live snapshot (remembers the last few turns)\n"
     "Anything else (plain text) is your standup answer."
 )
 _LINK_HINT = (
     "👋 This chat isn't linked yet. Generate a code in the app and send "
     "/start <code>."
 )
+
+# Per-chat /ask memory so follow-up questions ("what about last sprint?") work.
+_ASK_HISTORY: dict[str, list[dict[str, str]]] = {}
+# ponytail: in-process only — restart wipes it; move to Redis if the bot ever runs multi-process
 
 _SPRINT_CAP = 5
 
@@ -137,9 +141,19 @@ async def handle_update(update: dict, client: TelegramClient) -> None:
                     if len(parts) < 2 or not parts[1].strip():
                         reply = "Usage: /ask <question> — e.g. /ask what slipped this sprint?"
                     else:
+                        question = parts[1].strip()
                         try:
-                            answer = await AskService(session).answer(parts[1].strip())
+                            answer = await AskService(session).answer(
+                                question, history=_ASK_HISTORY.get(chat_id)
+                            )
                             reply = answer[:4000]  # stay under Telegram's 4096-char cap
+                            _ASK_HISTORY[chat_id] = (
+                                _ASK_HISTORY.get(chat_id, [])
+                                + [
+                                    {"role": "user", "content": question},
+                                    {"role": "assistant", "content": reply},
+                                ]
+                            )[-6:]
                         except Exception:  # noqa: BLE001 - one bad update must not kill the loop
                             logger.exception("AskService failed for chat %s", chat_id)
                             reply = "Couldn't answer that — the LLM call failed. Try again."
