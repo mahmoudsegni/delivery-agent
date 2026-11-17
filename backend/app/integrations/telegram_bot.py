@@ -24,6 +24,7 @@ from app.integrations import standup_state
 from app.integrations.telegram_client import TelegramClient
 from app.models.confidence import ConfidenceSnapshot
 from app.models.sprint import Sprint
+from app.services.ask_service import AskService
 from app.services.brief_service import BriefService
 from app.services.confidence_service import ConfidenceService
 from app.services.standup_service import StandupService
@@ -40,6 +41,7 @@ _HELP_TEXT = (
     "/start <code> — link this chat to your account\n"
     "/status — the latest morning brief\n"
     "/confidence — portfolio confidence at a glance\n"
+    "/ask <question> — free-text Q&A over the live snapshot\n"
     "Anything else (plain text) is your standup answer."
 )
 _LINK_HINT = (
@@ -127,6 +129,20 @@ async def handle_update(update: dict, client: TelegramClient) -> None:
                 else:
                     portfolio, sprints = await _fetch_confidence(session)
                     reply = _render_confidence(portfolio, sprints)
+            elif command == "/ask":
+                if await service.member_for_chat(chat_id) is None:
+                    reply = _LINK_HINT
+                else:
+                    parts = text.split(maxsplit=1)
+                    if len(parts) < 2 or not parts[1].strip():
+                        reply = "Usage: /ask <question> — e.g. /ask what slipped this sprint?"
+                    else:
+                        try:
+                            answer = await AskService(session).answer(parts[1].strip())
+                            reply = answer[:4000]  # stay under Telegram's 4096-char cap
+                        except Exception:  # noqa: BLE001 - one bad update must not kill the loop
+                            logger.exception("AskService failed for chat %s", chat_id)
+                            reply = "Couldn't answer that — the LLM call failed. Try again."
             elif command == "/help":
                 reply = _HELP_TEXT
             else:

@@ -12,6 +12,7 @@ from app.integrations.telegram_bot import handle_update
 from app.models.brief import Brief
 from app.models.confidence import ConfidenceSnapshot
 from app.models.sprint import Sprint
+from app.services.ask_service import AskService
 from app.services.brief_service import BriefService
 from app.services.standup_service import AnswerResult, StandupService
 from app.models.team import TeamMember
@@ -94,6 +95,21 @@ async def _run_confidence(monkeypatch, text, *, member=True, fetch=lambda sessio
     return await _run(monkeypatch, text, member=member)
 
 
+async def _run_ask(monkeypatch, text, *, member=True, answer: str | Exception = "Two items slipped"):
+    """Patch AskService.answer at class level; returns (client, asked questions)."""
+    asked: list[str] = []
+
+    async def _answer(self, question, history=None):
+        asked.append(question)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    monkeypatch.setattr(AskService, "answer", _answer)
+    client, _ = await _run(monkeypatch, text, member=member)
+    return client, asked
+
+
 async def test_confidence_with_data(monkeypatch):
     sprint_a = Sprint(name="Sprint 2404", start_date=date(2026, 11, 2), end_date=date(2026, 11, 13))
     sprint_b = Sprint(name="Sprint 2405", start_date=date(2026, 11, 9), end_date=date(2026, 11, 20))
@@ -142,6 +158,32 @@ async def test_status_without_brief(monkeypatch):
 
 async def test_status_unlinked_chat(monkeypatch):
     client, _ = await _run(monkeypatch, "/status", member=False)
+    assert "/start <code>" in client.sent[0][1]
+
+
+async def test_ask_answers_question(monkeypatch):
+    client, asked = await _run_ask(monkeypatch, "/ask what slipped this sprint?")
+    assert asked == ["what slipped this sprint?"]
+    assert client.sent[0][1] == "Two items slipped"
+
+
+async def test_ask_bare_command_usage_hint(monkeypatch):
+    client, asked = await _run_ask(monkeypatch, "/ask")
+    assert not asked
+    assert "Usage: /ask" in client.sent[0][1]
+
+
+async def test_ask_llm_failure_graceful(monkeypatch):
+    client, asked = await _run_ask(
+        monkeypatch, "/ask what's the mood?", answer=RuntimeError("boom")
+    )
+    assert asked == ["what's the mood?"]
+    assert "Couldn't answer that" in client.sent[0][1]
+
+
+async def test_ask_unlinked_chat(monkeypatch):
+    client, asked = await _run_ask(monkeypatch, "/ask anything", member=False)
+    assert not asked
     assert "/start <code>" in client.sent[0][1]
 
 
