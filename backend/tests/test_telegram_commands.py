@@ -10,6 +10,8 @@ from datetime import date
 from app.integrations import telegram_bot
 from app.integrations.telegram_bot import handle_update
 from app.models.brief import Brief
+from app.models.confidence import ConfidenceSnapshot
+from app.models.sprint import Sprint
 from app.services.brief_service import BriefService
 from app.services.standup_service import AnswerResult, StandupService
 from app.models.team import TeamMember
@@ -73,6 +75,53 @@ def _async(value):
         return value
 
     return _wrapper()
+
+
+def _snap(value: float, direction: str = "steady") -> ConfidenceSnapshot:
+    return ConfidenceSnapshot(
+        sprint_id="s1",
+        snapshot_date=date(2026, 11, 16),
+        confidence_value=value,
+        factors={"direction": direction},
+    )
+
+
+async def _run_confidence(monkeypatch, text, *, member=True, fetch=lambda session: (72.0, [])):
+    async def _fetch(session):
+        return fetch(session)
+
+    monkeypatch.setattr(telegram_bot, "_fetch_confidence", _fetch)
+    return await _run(monkeypatch, text, member=member)
+
+
+async def test_confidence_with_data(monkeypatch):
+    sprint_a = Sprint(name="Sprint 2404", start_date=date(2026, 11, 2), end_date=date(2026, 11, 13))
+    sprint_b = Sprint(name="Sprint 2405", start_date=date(2026, 11, 9), end_date=date(2026, 11, 20))
+    client, _ = await _run_confidence(
+        monkeypatch,
+        "/confidence",
+        fetch=lambda session: (
+            72.0,
+            [(sprint_a, _snap(78.0, "improving")), (sprint_b, _snap(55.0, "declining"))],
+        ),
+    )
+    (chat_id, reply), = client.sent
+    assert "72" in reply
+    assert "Sprint 2404" in reply and "Sprint 2405" in reply
+    assert "On track" in reply and "↑" in reply and "↓" in reply
+    assert len(reply) < 4096
+
+
+async def test_confidence_no_data(monkeypatch):
+    client, _ = await _run_confidence(
+        monkeypatch, "/confidence", fetch=lambda session: (None, [])
+    )
+    assert "No confidence data yet" in client.sent[0][1]
+
+
+async def test_confidence_unlinked_chat(monkeypatch):
+    client, _ = await _run_confidence(monkeypatch, "/confidence", member=False)
+    assert "/start <code>" in client.sent[0][1]
 
 
 async def test_status_with_brief(monkeypatch):

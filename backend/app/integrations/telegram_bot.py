@@ -6,6 +6,7 @@ Responsibilities:
 - Long-poll getUpdates (offset persisted in Redis so restarts don't replay).
 - ``/start <code>``  -> link a Telegram account to a TeamMember.
 - ``/status``        -> reply with the latest morning brief (linked chats only).
+- ``/confidence``    -> portfolio confidence + active sprint bands (linked chats only).
 - ``/help``          -> list commands.
 - plain text          -> answer to the current standup question.
 
@@ -16,10 +17,15 @@ is just the transport loop + routing.
 import asyncio
 import logging
 
+from sqlalchemy import select
+
 from app.config import settings
 from app.integrations import standup_state
 from app.integrations.telegram_client import TelegramClient
+from app.models.confidence import ConfidenceSnapshot
+from app.models.sprint import Sprint
 from app.services.brief_service import BriefService
+from app.services.confidence_service import ConfidenceService
 from app.services.standup_service import StandupService
 from app.tasks.db import create_task_session
 
@@ -33,12 +39,50 @@ _HELP_TEXT = (
     "Commands:\n"
     "/start <code> — link this chat to your account\n"
     "/status — the latest morning brief\n"
+    "/confidence — portfolio confidence at a glance\n"
     "Anything else (plain text) is your standup answer."
 )
 _LINK_HINT = (
     "👋 This chat isn't linked yet. Generate a code in the app and send "
     "/start <code>."
 )
+
+_SPRINT_CAP = 5
+
+
+async def _fetch_confidence(
+    session,
+) -> tuple[float | None, list[tuple[Sprint, ConfidenceSnapshot | None]]]:
+    """Portfolio headline + (active sprint, latest snapshot) pairs."""
+    conf = ConfidenceService(session)
+    portfolio = await conf.get_portfolio_confidence()
+    sprints = (
+        await session.execute(select(Sprint).where(Sprint.status == "active"))
+    ).scalars().all()
+    snaps = await conf.latest_snapshots_for([s.id for s in sprints])
+    return portfolio, [(s, snaps.get(s.id)) for s in sprints]
+
+
+def _render_confidence(
+    portfolio: float | None, sprints: list[tuple[Sprint, ConfidenceSnapshot | None]]
+) -> str:
+    if portfolio is None:
+        return "No confidence data yet — snapshots land nightly at 23:30."
+    lines = [f"*Portfolio confidence: {portfolio:.0f}/100*", "*Active sprints:*"]
+    for sprint, snap in sprints[:_SPRINT_CAP]:
+        if snap is None:
+            lines.append(f"• {sprint.name}: no snapshot yet")
+            continue
+        arrow = {"improving": "↑", "declining": "↓"}.get(
+            (snap.factors or {}).get("direction", "steady"), "→"
+        )
+        lines.append(
+            f"• {sprint.name}: {snap.confidence_value:.0f}/100"
+            f" ({ConfidenceService.value_to_band(snap.confidence_value)} {arrow})"
+        )
+    if len(sprints) > _SPRINT_CAP:
+        lines.append(f"+{len(sprints) - _SPRINT_CAP} more")
+    return "\n".join(lines)
 
 
 async def handle_update(update: dict, client: TelegramClient) -> None:
@@ -77,6 +121,12 @@ async def handle_update(update: dict, client: TelegramClient) -> None:
                         else BriefService.to_telegram_text(brief)
                         + "\n\n— full history on the Briefs page."
                     )
+            elif command == "/confidence":
+                if await service.member_for_chat(chat_id) is None:
+                    reply = _LINK_HINT
+                else:
+                    portfolio, sprints = await _fetch_confidence(session)
+                    reply = _render_confidence(portfolio, sprints)
             elif command == "/help":
                 reply = _HELP_TEXT
             else:
