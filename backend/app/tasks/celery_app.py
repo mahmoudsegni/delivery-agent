@@ -25,6 +25,11 @@ _beat_schedule: dict = {
         "task": "app.tasks.standup_tasks.start_scheduled_standup",
         "schedule": _crontab_from_str(settings.standup_schedule_cron),
     },
+    # Mid-round nudge for members who haven't answered yet.
+    "standup-nudge": {
+        "task": "app.tasks.standup_tasks.nudge_pending_standup",
+        "schedule": _crontab_from_str(settings.standup_nudge_cron),
+    },
     # Daily release-confidence snapshot (builds the trend series).
     "daily-confidence-snapshot": {
         "task": "app.tasks.confidence_tasks.snapshot_active_sprints",

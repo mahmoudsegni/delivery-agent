@@ -136,6 +136,9 @@ class Settings(BaseSettings):
     # Hard cutoff after which a round is closed + analyzed regardless of
     # outstanding responders (seconds).
     standup_cutoff_seconds: int = 1800
+    # Mid-round nudge: DM members who haven't answered yet (15 min after the
+    # default 09:00 start, 15 min before the cutoff).
+    standup_nudge_cron: str = "15 9 * * *"
 
     # ------------------------------------------------------------------
     # Webex bot (REST API — bot tokens do not expire)
