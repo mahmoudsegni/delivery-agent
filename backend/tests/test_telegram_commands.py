@@ -6,7 +6,9 @@ stubbed at class level. Rendering runs for real on an in-memory Brief.
 """
 
 from datetime import date
+import json
 
+from app.integrations import standup_state
 from app.integrations import telegram_bot
 from app.integrations.telegram_bot import handle_update
 from app.models.brief import Brief
@@ -34,6 +36,27 @@ class _FakeSessionCtx:
 
     async def __aexit__(self, *exc):
         return False
+
+
+class FakeRedis:
+    """Just enough async Redis (str values) for the ask-history path."""
+
+    def __init__(self):
+        self.data: dict[str, str] = {}
+        self.ttl: int | None = None
+
+    async def get(self, key):
+        return self.data.get(key)
+
+    async def set(self, key, value, ex=None):
+        self.data[key] = value
+        self.ttl = ex
+
+    async def delete(self, key):
+        self.data.pop(key, None)
+
+    async def aclose(self):
+        pass
 
 
 def _member() -> TeamMember:
@@ -141,13 +164,15 @@ async def _run_blockers(monkeypatch, *, member=True, data=None):
 
 
 async def _run_ask(
-    monkeypatch, *texts, member=True, answer: str | Exception | list[str | Exception] = "Two items slipped"
+    monkeypatch, *texts, member=True, answer: str | Exception | list[str | Exception] = "Two items slipped",
+    redis: FakeRedis | None = None,
 ):
     """Patch AskService.answer at class level; returns (replies, questions, histories).
 
     ``answer`` is one value reused for every call, or a list zipped with ``texts``.
     """
-    monkeypatch.setattr(telegram_bot, "_ASK_HISTORY", {})  # fresh memory per test
+    redis = redis or FakeRedis()  # fresh memory per test
+    monkeypatch.setattr(standup_state, "get_redis", lambda: redis)
     asked: list[str] = []
     histories: list[list | None] = []
     answers = answer if isinstance(answer, list) else [answer] * len(texts)
@@ -274,6 +299,38 @@ async def test_ask_llm_failure_graceful(monkeypatch):
     assert "Couldn't answer that" in sent[0][1]
 
 
+async def test_ask_persists_history_to_redis(monkeypatch):
+    r = FakeRedis()
+    await _run_ask(monkeypatch, "/ask what slipped?", redis=r)
+    assert json.loads(r.data["telegram:ask:42"]) == [
+        {"role": "user", "content": "what slipped?"},
+        {"role": "assistant", "content": "Two items slipped"},
+    ]
+    assert r.ttl == 86400
+
+
+async def test_ask_helpers_round_trip_with_cap():
+    r = FakeRedis()
+    turns = [{"role": "user", "content": f"q{i}"} for i in range(8)]
+    await standup_state.set_ask_history(r, "42", turns)
+    assert await standup_state.get_ask_history(r, "42") == turns[-6:]
+    await standup_state.delete_ask_history(r, "42")
+    assert await standup_state.get_ask_history(r, "42") is None
+
+
+async def test_reset_clears_ask_history(monkeypatch):
+    sent, asked, histories = await _run_ask(
+        monkeypatch, "/ask what slipped?", "/reset", "/ask anything else?"
+    )
+    assert "Fresh start" in sent[1][1]
+    assert histories == [None, None]  # post-reset turn starts from scratch
+
+
+async def test_reset_unlinked_chat(monkeypatch):
+    client, _ = await _run(monkeypatch, "/reset", member=False)
+    assert "/start <code>" in client.sent[0][1]
+
+
 async def test_ask_unlinked_chat(monkeypatch):
     sent, asked, _ = await _run_ask(monkeypatch, "/ask anything", member=False)
     assert not asked
@@ -328,7 +385,7 @@ async def test_blockers_unlinked_chat(monkeypatch):
 async def test_help_lists_commands(monkeypatch):
     client, _ = await _run(monkeypatch, "/help")
     reply = client.sent[0][1]
-    assert "/start" in reply and "/status" in reply and "/blockers" in reply and "standup" in reply
+    assert "/start" in reply and "/status" in reply and "/blockers" in reply and "/reset" in reply and "standup" in reply
 
 
 async def test_unknown_command_not_recorded_as_answer(monkeypatch):

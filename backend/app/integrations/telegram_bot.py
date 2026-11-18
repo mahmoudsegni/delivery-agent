@@ -45,16 +45,13 @@ _HELP_TEXT = (
     "/confidence — portfolio confidence at a glance\n"
     "/blockers — what's stuck right now (no LLM needed)\n"
     "/ask <question> — free-text Q&A over the live snapshot (remembers the last few turns)\n"
+    "/reset — clear /ask conversation memory\n"
     "Anything else (plain text) is your standup answer."
 )
 _LINK_HINT = (
     "👋 This chat isn't linked yet. Generate a code in the app and send "
     "/start <code>."
 )
-
-# Per-chat /ask memory so follow-up questions ("what about last sprint?") work.
-_ASK_HISTORY: dict[str, list[dict[str, str]]] = {}
-# ponytail: in-process only — restart wipes it; move to Redis if the bot ever runs multi-process
 
 _SPRINT_CAP = 5
 
@@ -164,21 +161,37 @@ async def handle_update(update: dict, client: TelegramClient) -> None:
                         reply = "Usage: /ask <question> — e.g. /ask what slipped this sprint?"
                     else:
                         question = parts[1].strip()
+                        redis = standup_state.get_redis()
                         try:
+                            history = await standup_state.get_ask_history(redis, chat_id)
                             answer = await AskService(session).answer(
-                                question, history=_ASK_HISTORY.get(chat_id)
+                                question, history=history
                             )
                             reply = answer[:4000]  # stay under Telegram's 4096-char cap
-                            _ASK_HISTORY[chat_id] = (
-                                _ASK_HISTORY.get(chat_id, [])
+                            await standup_state.set_ask_history(
+                                redis,
+                                chat_id,
+                                (history or [])
                                 + [
                                     {"role": "user", "content": question},
                                     {"role": "assistant", "content": reply},
-                                ]
-                            )[-6:]
+                                ],
+                            )
                         except Exception:  # noqa: BLE001 - one bad update must not kill the loop
                             logger.exception("AskService failed for chat %s", chat_id)
                             reply = "Couldn't answer that — the LLM call failed. Try again."
+                        finally:
+                            await redis.aclose()
+            elif command == "/reset":
+                if await service.member_for_chat(chat_id) is None:
+                    reply = _LINK_HINT
+                else:
+                    r = standup_state.get_redis()
+                    try:
+                        await standup_state.delete_ask_history(r, chat_id)
+                    finally:
+                        await r.aclose()
+                    reply = "Fresh start — /ask has no memory now."
             elif command == "/help":
                 reply = _HELP_TEXT
             else:

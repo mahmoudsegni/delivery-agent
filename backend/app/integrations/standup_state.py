@@ -68,3 +68,25 @@ async def get_convo(r: aioredis.Redis, chat_id: str) -> dict | None:
 
 async def clear_convo(r: aioredis.Redis, chat_id: str) -> None:
     await r.delete(_convo_key(chat_id))
+
+
+# --- /ask conversation memory ------------------------------------------------
+ASK_TTL = 60 * 60 * 24  # 24 hours
+
+
+def _ask_key(chat_id: str) -> str:
+    return f"telegram:ask:{chat_id}"
+
+
+async def get_ask_history(r: aioredis.Redis, chat_id: str) -> list[dict] | None:
+    val = await r.get(_ask_key(chat_id))
+    return json.loads(val) if val else None
+
+
+async def set_ask_history(r: aioredis.Redis, chat_id: str, turns: list[dict]) -> None:
+    """Persist only the last 3 user+assistant pairs (6 messages)."""
+    await r.set(_ask_key(chat_id), json.dumps(turns[-6:]), ex=ASK_TTL)
+
+
+async def delete_ask_history(r: aioredis.Redis, chat_id: str) -> None:
+    await r.delete(_ask_key(chat_id))
