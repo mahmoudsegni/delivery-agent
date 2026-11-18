@@ -191,7 +191,8 @@ class AgentAnalysisService:
     # ------------------------------------------------------------------
     # Blocker detection
     # ------------------------------------------------------------------
-    async def detect_blockers(self) -> dict[str, Any]:
+    async def detect_blockers_data(self) -> dict[str, Any]:
+        """Pure blocker/stuck facts: heuristic detection only — no LLM, no persistence."""
         as_of = await self._data_as_of()
         members = await self._members()
         sprints = await self._sprints()
@@ -287,6 +288,21 @@ class AgentAnalysisService:
             if mid in members and v["hours"] > members[mid].capacity_hours_per_sprint
         ]
 
+        high = sum(b["severity"] == "High" for b in blockers)
+        med = sum(b["severity"] == "Medium" for b in blockers)
+        low = sum(b["severity"] == "Low" for b in blockers)
+        return {
+            "sprint": current.name if current else None,
+            "asOf": as_of,
+            "staleThresholdDays": self.stale_days,
+            "summary": {"totalBlockers": len(blockers), "critical": high, "medium": med, "low": low},
+            "blockers": blockers,
+            "overloaded": overloaded,
+        }
+
+    async def detect_blockers(self) -> dict[str, Any]:
+        data = await self.detect_blockers_data()
+        blockers, overloaded, counts = data["blockers"], data["overloaded"], data["summary"]
         ai, ai_note = ({}, None)
         if blockers:
             facts = [
@@ -319,16 +335,13 @@ class AgentAnalysisService:
                 f"{o['member']} has {o['hours']}h open against {o['capacity']}h capacity — rebalance."
             )
 
-        high = sum(b["severity"] == "High" for b in blockers)
-        med = sum(b["severity"] == "Medium" for b in blockers)
-        low = sum(b["severity"] == "Low" for b in blockers)
         report = {
-            "id": "BLOCKERS-" + as_of.strftime("%Y%m%d"),
+            "id": "BLOCKERS-" + data["asOf"].strftime("%Y%m%d"),
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "dataAsOf": as_of.isoformat(),
-            "sprint": current.name if current else None,
-            "staleThresholdDays": self.stale_days,
-            "summary": {"totalBlockers": len(blockers), "critical": high, "medium": med, "low": low},
+            "dataAsOf": data["asOf"].isoformat(),
+            "sprint": data["sprint"],
+            "staleThresholdDays": data["staleThresholdDays"],
+            "summary": counts,
             "blockers": blockers,
             "overloaded": overloaded,
             "recommendations": recommendations,
@@ -336,8 +349,9 @@ class AgentAnalysisService:
             "aiNote": ai_note,
         }
         summary = (
-            f"{len(blockers)} blocked/stuck item(s): {high} high, {med} medium, {low} low"
-            + (f" — {current.name}" if current else "")
+            f"{counts['totalBlockers']} blocked/stuck item(s): "
+            f"{counts['critical']} high, {counts['medium']} medium, {counts['low']} low"
+            + (f" — {data['sprint']}" if data["sprint"] else "")
         )
         report_id = await self._save("blocker_detection", summary, report, "high" if not ai_note else "medium")
         return {"proposal_id": report_id, "report": report}

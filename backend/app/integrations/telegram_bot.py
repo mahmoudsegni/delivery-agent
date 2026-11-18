@@ -7,6 +7,7 @@ Responsibilities:
 - ``/start <code>``  -> link a Telegram account to a TeamMember.
 - ``/status``        -> reply with the latest morning brief (linked chats only).
 - ``/confidence``    -> portfolio confidence + active sprint bands (linked chats only).
+- ``/blockers``      -> deterministic stuck-work report from the heuristic detector (linked chats only).
 - ``/help``          -> list commands.
 - plain text          -> answer to the current standup question.
 
@@ -24,6 +25,7 @@ from app.integrations import standup_state
 from app.integrations.telegram_client import TelegramClient
 from app.models.confidence import ConfidenceSnapshot
 from app.models.sprint import Sprint
+from app.services.agent_analysis_service import AgentAnalysisService
 from app.services.ask_service import AskService
 from app.services.brief_service import BriefService
 from app.services.confidence_service import ConfidenceService
@@ -41,6 +43,7 @@ _HELP_TEXT = (
     "/start <code> — link this chat to your account\n"
     "/status — the latest morning brief\n"
     "/confidence — portfolio confidence at a glance\n"
+    "/blockers — what's stuck right now (no LLM needed)\n"
     "/ask <question> — free-text Q&A over the live snapshot (remembers the last few turns)\n"
     "Anything else (plain text) is your standup answer."
 )
@@ -133,6 +136,25 @@ async def handle_update(update: dict, client: TelegramClient) -> None:
                 else:
                     portfolio, sprints = await _fetch_confidence(session)
                     reply = _render_confidence(portfolio, sprints)
+            elif command == "/blockers":
+                if await service.member_for_chat(chat_id) is None:
+                    reply = _LINK_HINT
+                else:
+                    data = await AgentAnalysisService(session).detect_blockers_data()
+                    s = data["summary"]
+                    lines = [
+                        f"[{b['severity']}] {b['item']} — {b['title']} · {b['type']}, {b['daysBlocked']}d ({b['member']})"
+                        for b in data["blockers"][:10]
+                    ]
+                    if not lines:
+                        reply = "Nothing stuck right now 🎉"
+                    else:
+                        header = (
+                            f"🚧 {s['totalBlockers']} stuck item(s) — "
+                            f"{s['critical']} high, {s['medium']} medium, {s['low']} low"
+                            + (f" ({data['sprint']})" if data["sprint"] else "")
+                        )
+                        reply = ("\n".join([header] + lines))[:4000]
             elif command == "/ask":
                 if await service.member_for_chat(chat_id) is None:
                     reply = _LINK_HINT

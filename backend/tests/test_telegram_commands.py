@@ -12,6 +12,7 @@ from app.integrations.telegram_bot import handle_update
 from app.models.brief import Brief
 from app.models.confidence import ConfidenceSnapshot
 from app.models.sprint import Sprint
+from app.services.agent_analysis_service import AgentAnalysisService
 from app.services.ask_service import AskService
 from app.services.brief_service import BriefService
 from app.services.standup_service import AnswerResult, StandupService
@@ -93,6 +94,50 @@ async def _run_confidence(monkeypatch, text, *, member=True, fetch=lambda sessio
 
     monkeypatch.setattr(telegram_bot, "_fetch_confidence", _fetch)
     return await _run(monkeypatch, text, member=member)
+
+
+def _blockers_data(**over):
+    base = {
+        "sprint": "Sprint 2404",
+        "asOf": "2026-11-18T09:00:00+00:00",
+        "staleThresholdDays": 3,
+        "summary": {"totalBlockers": 2, "critical": 1, "medium": 1, "low": 0},
+        "blockers": [
+            {
+                "severity": "High",
+                "item": "DEV-101",
+                "title": "Fix checkout timeout",
+                "type": "On Hold",
+                "daysBlocked": 4,
+                "member": "Sarah Chen",
+            },
+            {
+                "severity": "Medium",
+                "item": "DEV-102",
+                "title": "Migrate icons",
+                "type": "Waiting",
+                "daysBlocked": 5,
+                "member": "Unassigned",
+            },
+        ],
+        "overloaded": [],
+    }
+    base.update(over)
+    return base
+
+
+async def _run_blockers(monkeypatch, *, member=True, data=None):
+    """Stub the pure extraction; fail hard if /blockers ever routes to the LLM/persisting path."""
+    async def _data(self):
+        return _blockers_data() if data is None else data
+
+    def _forbidden(self):
+        raise AssertionError("/blockers must stay deterministic: no detect_blockers/_save")
+
+    monkeypatch.setattr(AgentAnalysisService, "detect_blockers_data", _data)
+    monkeypatch.setattr(AgentAnalysisService, "detect_blockers", _forbidden)
+    monkeypatch.setattr(AgentAnalysisService, "_save", _forbidden)
+    return await _run(monkeypatch, "/blockers", member=member)
 
 
 async def _run_ask(
@@ -235,10 +280,55 @@ async def test_ask_unlinked_chat(monkeypatch):
     assert "/start <code>" in sent[0][1]
 
 
+async def test_blockers_lists_stuck_items(monkeypatch):
+    client, _ = await _run_blockers(monkeypatch)
+    reply = client.sent[0][1]
+    assert "🚧 2 stuck item(s) — 1 high, 1 medium, 0 low (Sprint 2404)" in reply
+    assert "[High] DEV-101 — Fix checkout timeout · On Hold, 4d (Sarah Chen)" in reply
+    assert "[Medium] DEV-102 — Migrate icons · Waiting, 5d (Unassigned)" in reply
+
+
+async def test_blockers_caps_at_ten_lines_and_4000_chars(monkeypatch):
+    def items(title_len):
+        return [
+            {"severity": "High", "item": f"DEV-{i}", "title": "T" * title_len,
+             "type": "On Hold", "daysBlocked": 9, "member": "Sarah Chen"}
+            for i in range(40)
+        ]
+
+    counts = {"totalBlockers": 40, "critical": 40, "medium": 0, "low": 0}
+    # Short titles: the [:10] slice shows the first ten items only.
+    client, _ = await _run_blockers(
+        monkeypatch, data=_blockers_data(summary=counts, blockers=items(40))
+    )
+    reply = client.sent[0][1]
+    assert "DEV-9" in reply and "DEV-10" not in reply
+    # Long titles: the reply itself stays under Telegram's cap.
+    client, _ = await _run_blockers(
+        monkeypatch, data=_blockers_data(summary=counts, blockers=items(480))
+    )
+    assert len(client.sent[0][1]) <= 4000
+
+
+async def test_blockers_clean_board(monkeypatch):
+    client, _ = await _run_blockers(
+        monkeypatch,
+        data=_blockers_data(
+            summary={"totalBlockers": 0, "critical": 0, "medium": 0, "low": 0}, blockers=[]
+        ),
+    )
+    assert "Nothing stuck right now" in client.sent[0][1]
+
+
+async def test_blockers_unlinked_chat(monkeypatch):
+    client, _ = await _run_blockers(monkeypatch, member=False)
+    assert "/start <code>" in client.sent[0][1]
+
+
 async def test_help_lists_commands(monkeypatch):
     client, _ = await _run(monkeypatch, "/help")
     reply = client.sent[0][1]
-    assert "/start" in reply and "/status" in reply and "standup" in reply
+    assert "/start" in reply and "/status" in reply and "/blockers" in reply and "standup" in reply
 
 
 async def test_unknown_command_not_recorded_as_answer(monkeypatch):
