@@ -7,7 +7,7 @@ import { Button } from '../../ui/Button';
 import { Modal } from '../../ui/Modal';
 import { EmptyState } from '../../ui/EmptyState';
 import {
-  usePortfolio, useApproveProposal, useRejectProposal,
+  usePortfolio, useApproveProposal, useRejectProposal, useInvestmentProfile,
 } from '../../hooks/useApi';
 import type { StreamStatus, StreamDirection, EscalationItem } from '../../types';
 
@@ -163,6 +163,9 @@ export function PortfolioView({ onOpenStream }: PortfolioViewProps) {
           )}
         </section>
 
+        {/* Investment — where the active sprint's story points go, by work item type. */}
+        <InvestmentTile />
+
         {modal && (
           <Modal
             title={modal.mode === 'adjust' ? 'Adjust & Approve' : 'Decline Escalation'}
@@ -196,5 +199,52 @@ export function PortfolioView({ onOpenStream }: PortfolioViewProps) {
         )}
       </div>
     </>
+  );
+}
+
+// Per-type hues for the investment bar; cycles after six types.
+const TYPE_COLORS = ['var(--accent)', 'var(--purple)', 'var(--orange)', 'var(--success)', 'var(--pink)', 'var(--ink-mute)'];
+
+function InvestmentTile() {
+  const { data, isPending } = useInvestmentProfile();
+  const rows = data?.rows ?? [];
+  const total = data?.total_points ?? 0;
+
+  return (
+    <section style={{ marginTop: 28 }}>
+      <h2 style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-mute)', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 12 }}>
+        Investment{data?.sprint_name ? ` — ${data.sprint_name}` : ''}
+      </h2>
+      {isPending ? (
+        <EmptyState>Loading…</EmptyState>
+      ) : rows.length === 0 || total === 0 ? (
+        <EmptyState>No story points in this sprint</EmptyState>
+      ) : (
+        <>
+          {/* Stacked share bar: one segment per type, solid = done, faded = open. */}
+          <div style={{ display: 'flex', height: 14, borderRadius: 'var(--radius-lg)', overflow: 'hidden', border: '1px solid var(--line)' }}>
+            {rows.map((r, i) => {
+              const color = TYPE_COLORS[i % TYPE_COLORS.length];
+              const doneShare = r.total_points ? (r.done_points / r.total_points) * 100 : 0;
+              return (
+                <div key={r.work_item_type} title={`${r.work_item_type}: ${r.done_points}/${r.total_points} pts done`}
+                  style={{ width: `${(r.total_points / total) * 100}%`, display: 'flex' }}>
+                  <div style={{ width: `${doneShare}%`, background: color }} />
+                  <div style={{ width: `${100 - doneShare}%`, background: color, opacity: 0.25 }} />
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 18px', marginTop: 10 }}>
+            {rows.map((r, i) => (
+              <span key={r.work_item_type} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--ink-soft)' }}>
+                <span style={{ width: 9, height: 9, borderRadius: 2, background: TYPE_COLORS[i % TYPE_COLORS.length] }} />
+                {r.work_item_type} — {r.done_points}/{r.total_points} pts · {r.item_count} item{r.item_count === 1 ? '' : 's'}
+              </span>
+            ))}
+          </div>
+        </>
+      )}
+    </section>
   );
 }

@@ -14,6 +14,7 @@ from app.schemas.dashboard import (
     DeliverySummary,
     FlowMetrics,
     IntegrationHealth,
+    InvestmentProfileResponse,
     RoadmapResponse,
     SprintDashboard,
     TeamLoadRow,
@@ -109,6 +110,14 @@ async def get_cost_by_stream(
 ) -> CostByStreamResponse:
     """Agent spend attributed through task → sprint → stream."""
     return await DashboardService(db).cost_by_stream(days)
+
+
+@router.get("/investment", response_model=InvestmentProfileResponse)
+async def get_investment_profile(
+    sprint_id: str | None = None, db: AsyncSession = Depends(get_db)
+) -> InvestmentProfileResponse:
+    """Story points by work item type, done vs open. Defaults to the active sprint."""
+    return await DashboardService(db).investment_profile(sprint_id)
 
 
 @router.get("/workforce-trend", response_model=WorkforceTrend)

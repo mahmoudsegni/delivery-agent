@@ -601,6 +601,21 @@ export interface CostByStreamResponse {
   unattributed_cost: number;
 }
 
+export interface InvestmentRow {
+  work_item_type: string;
+  total_points: number;
+  done_points: number;
+  open_points: number;
+  item_count: number;
+}
+
+export interface InvestmentProfileResponse {
+  rows: InvestmentRow[];
+  sprint_id: string | null;
+  sprint_name: string | null;
+  total_points: number;
+}
+
 export interface WorkforcePoint {
   date: string;
   dispatched: number;

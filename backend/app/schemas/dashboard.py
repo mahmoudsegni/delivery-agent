@@ -189,6 +189,23 @@ class CostByStreamResponse(BaseModel):
     unattributed_cost: float
 
 
+class InvestmentRow(BaseModel):
+    """Story points for one work item type: where the sprint's effort goes."""
+
+    work_item_type: str
+    total_points: float
+    done_points: float
+    open_points: float
+    item_count: int
+
+
+class InvestmentProfileResponse(BaseModel):
+    rows: list[InvestmentRow]
+    sprint_id: str | None
+    sprint_name: str | None
+    total_points: float
+
+
 class WorkforcePoint(BaseModel):
     """One bucket of agent output, for the executive ROI trend."""
 

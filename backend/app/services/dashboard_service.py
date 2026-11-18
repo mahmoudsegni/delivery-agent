@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 from statistics import mean, pstdev
-from typing import Any
+from typing import Any, Iterable
 
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -42,6 +42,8 @@ from app.schemas.dashboard import (
     FlowBucket,
     FlowMetrics,
     IntegrationHealth,
+    InvestmentProfileResponse,
+    InvestmentRow,
     ReleaseReadiness,
     RoadmapItem,
     RoadmapResponse,
@@ -55,6 +57,7 @@ from app.schemas.dashboard import (
     WorkforcePoint,
     WorkforceTrend,
 )
+from app.services.agent_analysis_service import CONTAINER_TYPES
 from app.services.confidence_service import ConfidenceService
 
 # An item counts as stale after this long without a change. Matches the
@@ -76,6 +79,41 @@ def _days_since(ts: datetime | None) -> int:
     if ts.tzinfo is None:
         ts = ts.replace(tzinfo=timezone.utc)
     return max(0, (_utcnow() - ts).days)
+
+
+def _investment_response(
+    sprint: Sprint | None,
+    raw: Iterable[tuple[str, float | None, float | None, int]],
+) -> InvestmentProfileResponse:
+    """Shape grouped SQL rows into the investment-split response.
+
+    Container types (Feature/Epic/Release) are dropped here rather than in
+    SQL so parent items don't double-count their children's points — same
+    rule ``detect_blockers`` applies. ``story_points`` is nullable: NULL
+    contributes 0 points but the item still counts.
+    """
+    if sprint is None:
+        return InvestmentProfileResponse(
+            rows=[], sprint_id=None, sprint_name=None, total_points=0.0
+        )
+    rows = [
+        InvestmentRow(
+            work_item_type=t,
+            total_points=round(float(total or 0), 1),
+            done_points=round(float(done or 0), 1),
+            open_points=round(float((total or 0) - (done or 0)), 1),
+            item_count=items or 0,
+        )
+        for t, total, done, items in raw
+        if t not in CONTAINER_TYPES
+    ]
+    rows.sort(key=lambda r: r.total_points, reverse=True)
+    return InvestmentProfileResponse(
+        rows=rows,
+        sprint_id=sprint.id,
+        sprint_name=sprint.name,
+        total_points=round(sum(r.total_points for r in rows), 1),
+    )
 
 
 def _percentile(values: list[float], pct: float) -> float | None:
@@ -530,6 +568,34 @@ class DashboardService:
             total_cost=round(total, 2),
             unattributed_cost=round(max(0.0, total - attributed), 2),
         )
+
+    async def investment_profile(
+        self, sprint_id: str | None = None
+    ) -> InvestmentProfileResponse:
+        """Story points by work item type (done vs open) for one sprint.
+
+        Defaults to the active sprint; empty rows when there is none — same
+        convention as ``sprint_dashboard``.
+        """
+        sprint = await self._resolve_sprint(sprint_id)
+        raw: list[tuple[str, float | None, float | None, int]] = []
+        if sprint is not None:
+            work_type = func.coalesce(Task.work_item_type, "Unclassified")
+            raw = (
+                await self.db.execute(
+                    select(
+                        work_type.label("work_item_type"),
+                        func.sum(Task.story_points).label("total"),
+                        func.sum(Task.story_points)
+                        .filter(Task.status == "done")
+                        .label("done"),
+                        func.count(Task.id).label("items"),
+                    )
+                    .where(Task.sprint_id == sprint.id)
+                    .group_by(work_type)
+                )
+            ).all()
+        return _investment_response(sprint, raw)
 
     async def workforce_trend(self, days: int = 84, bucket_days: int = 7) -> WorkforceTrend:
         """Agent output bucketed over time, for the executive ROI charts.
