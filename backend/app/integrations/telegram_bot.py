@@ -8,6 +8,7 @@ Responsibilities:
 - ``/status``        -> reply with the latest morning brief (linked chats only).
 - ``/confidence``    -> portfolio confidence + active sprint bands (linked chats only).
 - ``/blockers``      -> deterministic stuck-work report from the heuristic detector (linked chats only).
+- ``/team``          -> per-member capacity vs assigned hours for the active sprint (linked chats only).
 - ``/skip [reason]`` -> mark yourself out of the open standup round (no nudges, not missing).
 - ``/help``          -> list commands.
 - plain text          -> answer to the current standup question.
@@ -26,10 +27,12 @@ from app.integrations import standup_state
 from app.integrations.telegram_client import TelegramClient
 from app.models.confidence import ConfidenceSnapshot
 from app.models.sprint import Sprint
+from app.schemas.dashboard import TeamLoadRow
 from app.services.agent_analysis_service import AgentAnalysisService
 from app.services.ask_service import AskService
 from app.services.brief_service import BriefService
 from app.services.confidence_service import ConfidenceService
+from app.services.dashboard_service import DashboardService
 from app.services.standup_service import StandupService
 from app.tasks.db import create_task_session
 
@@ -45,6 +48,7 @@ _HELP_TEXT = (
     "/status — the latest morning brief\n"
     "/confidence — portfolio confidence at a glance\n"
     "/blockers — what's stuck right now (no LLM needed)\n"
+    "/team — capacity vs assigned load this sprint (no LLM needed)\n"
     "/skip <reason> — mark yourself out of today's standup\n"
     "/ask <question> — free-text Q&A over the live snapshot (remembers the last few turns)\n"
     "/reset — clear /ask conversation memory\n"
@@ -91,6 +95,52 @@ def _render_confidence(
     if len(sprints) > _SPRINT_CAP:
         lines.append(f"+{len(sprints) - _SPRINT_CAP} more")
     return "\n".join(lines)
+
+
+_TEAM_ROW_CAP = 20
+
+
+async def _fetch_team_load(session) -> list[TeamLoadRow] | None:
+    """Per-member load for the active sprint; None when no sprint is active."""
+    sprint = (
+        await session.execute(
+            select(Sprint).where(Sprint.status == "active").limit(1)
+        )
+    ).scalar_one_or_none()
+    if sprint is None:
+        return None
+    return await DashboardService(session).team_load(sprint.id)
+
+
+def _render_team(rows: list[TeamLoadRow]) -> str:
+    """Header + one line per member, over-allocated first, then by load %."""
+    rows = [r for r in rows if r.capacity_hours or r.assigned_hours]
+
+    def _key(r: TeamLoadRow):
+        pct = (
+            r.assigned_hours / r.capacity_hours
+            if r.capacity_hours
+            else (float("inf") if r.assigned_hours else 0.0)
+        )
+        return (0 if r.assigned_hours > r.capacity_hours else 1, -pct)
+
+    rows = sorted(rows, key=_key)
+    over = sum(1 for r in rows if r.assigned_hours > r.capacity_hours)
+    lines = []
+    for r in rows[:_TEAM_ROW_CAP]:
+        pct = (
+            f"{r.assigned_hours / r.capacity_hours:.0%}"
+            if r.capacity_hours
+            else "n/a"
+        )
+        flag = "⚠️ " if r.assigned_hours > r.capacity_hours else ""
+        lines.append(
+            f"{flag}{r.name} — {r.assigned_hours}/{r.capacity_hours}h ({pct})"
+            f" · {r.open_points} pts open"
+        )
+    if len(rows) > _TEAM_ROW_CAP:
+        lines.append(f"+{len(rows) - _TEAM_ROW_CAP} more")
+    return "\n".join([f"👥 Team load — {over} over capacity"] + lines)[:4000]
 
 
 async def handle_update(update: dict, client: TelegramClient) -> None:
@@ -154,6 +204,16 @@ async def handle_update(update: dict, client: TelegramClient) -> None:
                             + (f" ({data['sprint']})" if data["sprint"] else "")
                         )
                         reply = ("\n".join([header] + lines))[:4000]
+            elif command == "/team":
+                if await service.member_for_chat(chat_id) is None:
+                    reply = _LINK_HINT
+                else:
+                    rows = await _fetch_team_load(session)
+                    reply = (
+                        "No active sprint — /team shows load for the current sprint."
+                        if rows is None
+                        else _render_team(rows)
+                    )
             elif command == "/skip":
                 if await service.member_for_chat(chat_id) is None:
                     reply = _LINK_HINT

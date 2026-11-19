@@ -15,6 +15,7 @@ from app.models.brief import Brief
 from app.models.confidence import ConfidenceSnapshot
 from app.models.sprint import Sprint
 from app.models.standup import StandupEntry, StandupRound
+from app.schemas.dashboard import TeamLoadRow
 from app.services.agent_analysis_service import AgentAnalysisService
 from app.services.ask_service import AskService
 from app.services.brief_service import BriefService
@@ -475,6 +476,94 @@ async def test_unknown_command_not_recorded_as_answer(monkeypatch):
     client, recorded = await _run(monkeypatch, "/foo bar")
     assert not recorded
     assert "/help" in client.sent[0][1]
+
+
+# ------------------------------------------------------------------
+# /team (issue #33)
+# ------------------------------------------------------------------
+
+
+def _load_row(name, capacity, assigned, points=0) -> TeamLoadRow:
+    return TeamLoadRow(
+        id=name,
+        name=name,
+        role="Developer",
+        capacity_hours=capacity,
+        assigned_hours=assigned,
+        open_points=points,
+        in_progress=0,
+        done=0,
+        stale=0,
+    )
+
+
+_DEFAULT_TEAM = [
+    _load_row("Sarah Chen", 40, 50, points=8),  # over
+    _load_row("Alex Kim", 40, 34, points=5),  # 85%
+    _load_row("Idle Person", 0, 0),  # skipped
+    _load_row("Marta Diaz", 30, 21),  # 70%
+]
+
+
+async def _run_team(monkeypatch, *, member=True, rows=_DEFAULT_TEAM):
+    async def _fetch(session):
+        return rows
+
+    monkeypatch.setattr(telegram_bot, "_fetch_team_load", _fetch)
+    return await _run(monkeypatch, "/team", member=member)
+
+
+async def test_team_renders_and_sorts(monkeypatch):
+    client, recorded = await _run_team(monkeypatch)
+    assert not recorded
+    reply = client.sent[0][1]
+    assert "👥 Team load — 1 over capacity" in reply
+    assert "⚠️ Sarah Chen — 50/40h (125%) · 8 pts open" in reply
+    assert "Alex Kim — 34/40h (85%) · 5 pts open" in reply
+    assert "Idle Person" not in reply
+    assert reply.index("Sarah Chen") < reply.index("Alex Kim") < reply.index("Marta Diaz")
+    assert len(reply) < 4096
+
+
+async def test_team_zero_capacity_counts_as_over(monkeypatch):
+    client, _ = await _run_team(
+        monkeypatch, rows=[_load_row("Sarah Chen", 0, 5, points=2)]
+    )
+    reply = client.sent[0][1]
+    assert "1 over capacity" in reply
+    assert "⚠️ Sarah Chen — 5/0h (n/a) · 2 pts open" in reply
+
+
+async def test_team_row_cap(monkeypatch):
+    rows = [_load_row(f"Member {i:02d}", 40, 40) for i in range(25)]
+    client, _ = await _run_team(monkeypatch, rows=rows)
+    reply = client.sent[0][1]
+    assert "+5 more" in reply
+    assert "Member 19" in reply
+    assert "Member 20" not in reply  # 20 rows kept, numbered 00..19
+
+
+async def test_team_char_cap(monkeypatch):
+    rows = [_load_row("N" * 300, 40, 40) for _ in range(20)]
+    client, _ = await _run_team(monkeypatch, rows=rows)
+    assert len(client.sent[0][1]) <= 4000  # 20 rows x ~330 chars, hard-sliced
+
+
+async def test_team_no_active_sprint(monkeypatch):
+    client, _ = await _run_team(monkeypatch, rows=None)
+    assert client.sent[0][1] == (
+        "No active sprint — /team shows load for the current sprint."
+    )
+
+
+async def test_team_unlinked_chat(monkeypatch):
+    client, _ = await _run_team(monkeypatch, member=False)
+    assert "/start <code>" in client.sent[0][1]
+
+
+async def test_help_lists_team(monkeypatch):
+    client, _ = await _run(monkeypatch, "/help")
+    assert "/team" in client.sent[0][1]
 
 
 async def test_plain_text_still_records_answer(monkeypatch):
