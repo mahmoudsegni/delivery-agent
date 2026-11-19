@@ -11,7 +11,7 @@ import {
   listBriefs, getLatestBrief, generateBrief, askDeliveryManager,
   getSprintDashboard, getTeamLoad, getVelocity, getDeliverySummary, getIntegrationHealth,
   getCostByStream, getWorkforceTrend, getFlowMetrics, getRoadmap, getBurndown, snapshotSprint,
-  getForecast, getInvestmentProfile,
+  getForecast, getInvestmentProfile, getInvestmentTrend,
 } from '../lib/api';
 
 export const taskKeys = { all: ['tasks'] as const };
@@ -289,6 +289,7 @@ export const dashboardKeys = {
   costByStream: (days?: number | null) => ['dashboard', 'cost-by-stream', days ?? 'all'] as const,
   investment: (sprintId?: string | null) =>
     ['dashboard', 'investment', sprintId ?? 'active'] as const,
+  investmentTrend: (sprints = 4) => ['dashboard', 'investment-trend', sprints] as const,
   workforceTrend: (days: number, bucket: number) =>
     ['dashboard', 'workforce-trend', days, bucket] as const,
   flow: (days: number, streamId?: string | null) =>
@@ -358,6 +359,14 @@ export function useInvestmentProfile() {
   return useQuery({
     queryKey: dashboardKeys.investment(),
     queryFn: () => getInvestmentProfile(),
+    refetchInterval: 60_000,
+  });
+}
+
+export function useInvestmentTrend(sprints = 4) {
+  return useQuery({
+    queryKey: dashboardKeys.investmentTrend(sprints),
+    queryFn: () => getInvestmentTrend(sprints),
     refetchInterval: 60_000,
   });
 }

@@ -3,7 +3,7 @@ import type {
   AgentRun, AskMessage, AskResponse, AutopilotState, AutopilotUpdate, Brief, CodingStats,
   DecisionItem, Feature, FeatureCreate, PortfolioResponse, Proposal, RepoCreateResponse,
   RunEventsResponse, Sprint, SprintCreate, StreamDetail, StreamListItem, Task, TaskCreate, TaskUpdate, TeamMember,
-  CostByStreamResponse, DeliverySummary, FlowMetrics, IntegrationHealth, InvestmentProfileResponse, RoadmapResponse,
+  CostByStreamResponse, DeliverySummary, FlowMetrics, IntegrationHealth, InvestmentProfileResponse, InvestmentTrendResponse, RoadmapResponse,
   SprintBurndown, SprintDashboard, SprintForecast, TeamLoadRow, VelocityResponse, WorkforceTrend,
 } from '../types';
 
@@ -305,6 +305,10 @@ export async function getCostByStream(days?: number | null): Promise<CostByStrea
 export async function getInvestmentProfile(sprintId?: string | null): Promise<InvestmentProfileResponse> {
   const qs = sprintId ? `?sprint_id=${encodeURIComponent(sprintId)}` : '';
   return json<InvestmentProfileResponse>(await apiFetch(`/api/v1/dashboard/investment${qs}`));
+}
+
+export async function getInvestmentTrend(sprints = 4): Promise<InvestmentTrendResponse> {
+  return json<InvestmentTrendResponse>(await apiFetch(`/api/v1/dashboard/investment/trend?sprints=${sprints}`));
 }
 
 export async function getWorkforceTrend(days = 84, bucketDays = 7): Promise<WorkforceTrend> {

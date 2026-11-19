@@ -29,6 +29,10 @@ __all__ = [
     "FlowBucket",
     "FlowMetrics",
     "IntegrationHealth",
+    "InvestmentRow",
+    "InvestmentProfileResponse",
+    "InvestmentTrendSprint",
+    "InvestmentTrendResponse",
     "ReleaseReadiness",
     "RoadmapItem",
     "RoadmapResponse",
@@ -204,6 +208,21 @@ class InvestmentProfileResponse(BaseModel):
     sprint_id: str | None
     sprint_name: str | None
     total_points: float
+
+
+class InvestmentTrendSprint(BaseModel):
+    """One sprint's investment split, inside the trend window."""
+
+    sprint_id: str
+    name: str
+    end_date: date
+    rows: list[InvestmentRow]
+
+
+class InvestmentTrendResponse(BaseModel):
+    """Per-sprint type splits, oldest → newest, active sprint last."""
+
+    sprints: list[InvestmentTrendSprint]
 
 
 class WorkforcePoint(BaseModel):

@@ -7,7 +7,7 @@ import { Button } from '../../ui/Button';
 import { Modal } from '../../ui/Modal';
 import { EmptyState } from '../../ui/EmptyState';
 import {
-  usePortfolio, useApproveProposal, useRejectProposal, useInvestmentProfile,
+  usePortfolio, useApproveProposal, useRejectProposal, useInvestmentProfile, useInvestmentTrend,
 } from '../../hooks/useApi';
 import type { StreamStatus, StreamDirection, EscalationItem } from '../../types';
 
@@ -205,6 +205,38 @@ export function PortfolioView({ onOpenStream }: PortfolioViewProps) {
 // Per-type hues for the investment bar; cycles after six types.
 const TYPE_COLORS = ['var(--accent)', 'var(--purple)', 'var(--orange)', 'var(--success)', 'var(--pink)', 'var(--ink-mute)'];
 
+// Per-sprint drift lines under the share bar: "Bug — 8 → 13 → 21 pts",
+// oldest → newest (active sprint last). A type absent from a sprint reads 0.
+function InvestmentTrendLines() {
+  const { data } = useInvestmentTrend();
+  const sprints = data?.sprints ?? [];
+  if (sprints.length < 2) return null; // a trend needs at least two points
+
+  // Union of types, newest sprint's order first so the freshest mix leads.
+  const totals = new Map<string, number[]>();
+  for (const s of [...sprints].reverse()) {
+    for (const r of s.rows) {
+      if (!totals.has(r.work_item_type)) totals.set(r.work_item_type, sprints.map(() => 0));
+    }
+  }
+  sprints.forEach((s, i) => {
+    for (const r of s.rows) {
+      const series = totals.get(r.work_item_type);
+      if (series) series[i] = r.total_points;
+    }
+  });
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 12 }}>
+      {[...totals].map(([type, series]) => (
+        <span key={type} style={{ fontSize: 12, color: 'var(--ink-soft)' }}>
+          {type} — {series.join(' → ')} pts
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function InvestmentTile() {
   const { data, isPending } = useInvestmentProfile();
   const rows = data?.rows ?? [];
@@ -243,6 +275,7 @@ function InvestmentTile() {
               </span>
             ))}
           </div>
+          <InvestmentTrendLines />
         </>
       )}
     </section>

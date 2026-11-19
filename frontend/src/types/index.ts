@@ -616,6 +616,17 @@ export interface InvestmentProfileResponse {
   total_points: number;
 }
 
+export interface InvestmentTrendSprint {
+  sprint_id: string;
+  name: string;
+  end_date: string;
+  rows: InvestmentRow[];
+}
+
+export interface InvestmentTrendResponse {
+  sprints: InvestmentTrendSprint[];
+}
+
 export interface WorkforcePoint {
   date: string;
   dispatched: number;

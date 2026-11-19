@@ -15,6 +15,7 @@ from app.schemas.dashboard import (
     FlowMetrics,
     IntegrationHealth,
     InvestmentProfileResponse,
+    InvestmentTrendResponse,
     RoadmapResponse,
     SprintDashboard,
     TeamLoadRow,
@@ -118,6 +119,16 @@ async def get_investment_profile(
 ) -> InvestmentProfileResponse:
     """Story points by work item type, done vs open. Defaults to the active sprint."""
     return await DashboardService(db).investment_profile(sprint_id)
+
+
+@router.get("/investment/trend", response_model=InvestmentTrendResponse)
+async def get_investment_trend(
+    sprints: int = Query(4, ge=2, le=8),
+    db: AsyncSession = Depends(get_db),
+) -> InvestmentTrendResponse:
+    """Per-sprint story-point splits by work item type: N-1 closed sprints
+    plus the active one, oldest first."""
+    return await DashboardService(db).investment_trend(sprints)
 
 
 @router.get("/workforce-trend", response_model=WorkforceTrend)

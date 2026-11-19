@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 from statistics import mean, pstdev
-from typing import Any, Iterable
+from typing import Any, Iterable, Sequence
 
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -44,6 +44,8 @@ from app.schemas.dashboard import (
     IntegrationHealth,
     InvestmentProfileResponse,
     InvestmentRow,
+    InvestmentTrendResponse,
+    InvestmentTrendSprint,
     ReleaseReadiness,
     RoadmapItem,
     RoadmapResponse,
@@ -113,6 +115,41 @@ def _investment_response(
         sprint_id=sprint.id,
         sprint_name=sprint.name,
         total_points=round(sum(r.total_points for r in rows), 1),
+    )
+
+
+def _trend_window(
+    closed_desc: Sequence[Sprint], active: Sprint | None, sprints: int
+) -> list[Sprint]:
+    """The trend window: last N-1 closed sprints plus the active one, oldest
+    → newest. An active sprint already past its end date shows in both lists;
+    it is dropped from the closed side so it appears once, last."""
+    picked = [s for s in closed_desc[: sprints - 1] if active is None or s.id != active.id]
+    picked.reverse()  # oldest → newest
+    if active is not None:
+        picked.append(active)  # the active sprint is always last
+    return picked
+
+
+def _trend_response(
+    window: Sequence[Sprint],
+    raw: Iterable[tuple[str, str, float | None, float | None, int]],
+) -> InvestmentTrendResponse:
+    """Shape (sprint_id, type, total, done, items) rows into the trend, reusing
+    the one-sprint shaper so snapshot and trend can never disagree on rules."""
+    by_sprint: dict[str, list[tuple[str, float | None, float | None, int]]] = {}
+    for sprint_id, t, total, done, items in raw:
+        by_sprint.setdefault(sprint_id, []).append((t, total, done, items))
+    return InvestmentTrendResponse(
+        sprints=[
+            InvestmentTrendSprint(
+                sprint_id=s.id,
+                name=s.name,
+                end_date=s.end_date,
+                rows=_investment_response(s, by_sprint.get(s.id, [])).rows,
+            )
+            for s in window
+        ]
     )
 
 
@@ -596,6 +633,46 @@ class DashboardService:
                 )
             ).all()
         return _investment_response(sprint, raw)
+
+    async def investment_trend(self, sprints: int = 4) -> InvestmentTrendResponse:
+        """Story points by work item type over the last N sprints — is the mix
+        drifting toward bug-fixing? Window: N-1 closed + the active sprint
+        (``_resolve_sprint`` convention), oldest first; empty when the board
+        has no sprints.
+        """
+        closed_desc = list(
+            (
+                await self.db.execute(
+                    select(Sprint)
+                    .where(Sprint.end_date < _utcnow().date())
+                    .order_by(Sprint.end_date.desc())
+                    .limit(sprints - 1)
+                )
+            ).scalars()
+        )
+        active = await self._resolve_sprint(None)
+        window = _trend_window(closed_desc, active, sprints)
+
+        raw: list[tuple[str, str, float | None, float | None, int]] = []
+        ids = [s.id for s in window]
+        if ids:
+            work_type = func.coalesce(Task.work_item_type, "Unclassified")
+            raw = (
+                await self.db.execute(
+                    select(
+                        Task.sprint_id.label("sprint_id"),
+                        work_type.label("work_item_type"),
+                        func.sum(Task.story_points).label("total"),
+                        func.sum(Task.story_points)
+                        .filter(Task.status == "done")
+                        .label("done"),
+                        func.count(Task.id).label("items"),
+                    )
+                    .where(Task.sprint_id.in_(ids))
+                    .group_by(Task.sprint_id, work_type)
+                )
+            ).all()
+        return _trend_response(window, raw)
 
     async def workforce_trend(self, days: int = 84, bucket_days: int = 7) -> WorkforceTrend:
         """Agent output bucketed over time, for the executive ROI charts.
