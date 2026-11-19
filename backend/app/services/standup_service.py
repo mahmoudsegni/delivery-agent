@@ -299,6 +299,45 @@ class StandupService:
         finally:
             await r.aclose()
 
+    async def mark_skipped(self, chat_id: str, reason: str) -> str:
+        """Mark the linked member out for the open collecting round (issue #31).
+
+        Idempotent via select-then-update (the ``submit_entry`` pattern):
+        ``start_round`` pre-creates the (round, member) row, so a blind
+        merge/insert would trip ``uq_standup_entry_round_member``.
+        """
+        member = await self.member_for_chat(chat_id)
+        if member is None:
+            return "This chat isn't linked yet — send /start <code>."
+        round_ = (
+            await self.db.execute(
+                select(StandupRound)
+                .where(StandupRound.status == "collecting")
+                .order_by(StandupRound.created_at.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if round_ is None:
+            return "No open standup round right now."
+        entry = (
+            await self.db.execute(
+                select(StandupEntry).where(
+                    StandupEntry.round_id == round_.id,
+                    StandupEntry.member_id == member.id,
+                )
+            )
+        ).scalar_one_or_none()
+        if entry is None:  # member wasn't in the prompted list
+            entry = StandupEntry(round_id=round_.id, member_id=member.id)
+            self.db.add(entry)
+        entry.raw_text = {
+            **(entry.raw_text or {}),
+            "skipped": True,
+            "reason": reason.strip() or "out today",
+        }
+        await self.db.commit()
+        return "You're marked out for today's standup — no more nudges 🏖"
+
     async def _is_round_complete(self, round_id: str) -> bool:
         result = await self.db.execute(
             select(StandupEntry.completed).where(StandupEntry.round_id == round_id)
@@ -351,12 +390,18 @@ class StandupService:
         member_summaries = []
         for e in entries:
             name = names.get(e.member_id, "Unknown")
-            member_blocks.append(
-                f"{name}:\n"
-                f"  Yesterday: {e.yesterday or '(no response)'}\n"
-                f"  Today: {e.today or '(no response)'}\n"
-                f"  Blockers: {e.blockers or 'None'}"
-            )
+            skipped = bool((e.raw_text or {}).get("skipped"))
+            if skipped:  # /skip member (issue #31): out today, not missing
+                member_blocks.append(
+                    f"{name}: ⛰ out today ({(e.raw_text or {}).get('reason', 'out today')})"
+                )
+            else:
+                member_blocks.append(
+                    f"{name}:\n"
+                    f"  Yesterday: {e.yesterday or '(no response)'}\n"
+                    f"  Today: {e.today or '(no response)'}\n"
+                    f"  Blockers: {e.blockers or 'None'}"
+                )
             member_summaries.append(
                 {
                     "member": name,
@@ -364,6 +409,7 @@ class StandupService:
                     "today": e.today,
                     "blockers": e.blockers,
                     "responded": e.completed,
+                    "skipped": skipped,
                 }
             )
 

@@ -14,6 +14,7 @@ from app.integrations.telegram_bot import handle_update
 from app.models.brief import Brief
 from app.models.confidence import ConfidenceSnapshot
 from app.models.sprint import Sprint
+from app.models.standup import StandupEntry, StandupRound
 from app.services.agent_analysis_service import AgentAnalysisService
 from app.services.ask_service import AskService
 from app.services.brief_service import BriefService
@@ -386,6 +387,88 @@ async def test_help_lists_commands(monkeypatch):
     client, _ = await _run(monkeypatch, "/help")
     reply = client.sent[0][1]
     assert "/start" in reply and "/status" in reply and "/blockers" in reply and "/reset" in reply and "standup" in reply
+    assert "/skip" in reply
+
+
+class _Rows:
+    def __init__(self, value):
+        self.value = value
+
+    def scalar_one_or_none(self):
+        return self.value
+
+
+class _ScriptedSession:
+    """Just enough async session for mark_skipped: ordered query results."""
+
+    def __init__(self, results):
+        self.results = list(results)
+        self.added = []
+
+    async def execute(self, query):
+        return _Rows(self.results.pop(0))  # IndexError = one query too many
+
+    def add(self, obj):
+        self.added.append(obj)
+
+    async def commit(self):
+        pass
+
+
+def _open_round() -> StandupRound:
+    return StandupRound(status="collecting", trigger="manual")
+
+
+async def test_skip_creates_entry_with_reason():
+    session = _ScriptedSession([_member(), _open_round(), None])
+    reply = await StandupService(session).mark_skipped("42", "pto")
+    assert "out for today's standup" in reply
+    entry, = session.added
+    assert entry.raw_text == {"skipped": True, "reason": "pto"}
+
+
+async def test_skip_repeat_updates_existing_entry():
+    existing = StandupEntry(round_id="r1", member_id="m1", raw_text={"messages": []})
+    session = _ScriptedSession([_member(), _open_round(), existing])
+    reply = await StandupService(session).mark_skipped("42", "")
+    assert "out for today's standup" in reply
+    assert not session.added  # repeat /skip updates the same row, no duplicate insert
+    assert existing.raw_text == {"messages": [], "skipped": True, "reason": "out today"}
+
+
+async def test_skip_without_open_round():
+    session = _ScriptedSession([_member(), None])
+    reply = await StandupService(session).mark_skipped("42", "pto")
+    assert "No open standup round" in reply
+
+
+async def _run_skip(monkeypatch, text, *, member=True):
+    calls = []
+
+    async def _skip(self, chat_id, reason):
+        calls.append((chat_id, reason))
+        return "You're marked out for today's standup — no more nudges 🏖"
+
+    monkeypatch.setattr(StandupService, "mark_skipped", _skip)
+    client, _ = await _run(monkeypatch, text, member=member)
+    return client, calls
+
+
+async def test_skip_relays_reason(monkeypatch):
+    client, calls = await _run_skip(monkeypatch, "/skip pto")
+    assert calls == [("42", "pto")]
+    assert "out for today's standup" in client.sent[0][1]
+
+
+async def test_skip_bare_command(monkeypatch):
+    _, calls = await _run_skip(monkeypatch, "/skip")
+    assert calls == [("42", "")]
+
+
+async def test_skip_unlinked_chat(monkeypatch):
+    client, calls = await _run_skip(monkeypatch, "/skip pto", member=False)
+    assert not calls
+    assert "/start <code>" in client.sent[0][1]
 
 
 async def test_unknown_command_not_recorded_as_answer(monkeypatch):
