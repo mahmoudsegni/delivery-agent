@@ -22,6 +22,9 @@ interface KanbanBoardProps {
   onClearTeam: () => void;
   /** null = show every sprint. */
   sprintId: string | null;
+  /** Open task drawer is owned by App so the search palette can set it. */
+  openTaskId: string | null;
+  setOpenTaskId: (id: string | null) => void;
 }
 
 type Card = { id: string; displayId: string; title: string; status: string; assignee: string; team: string | null; hours: number; feature: string | null; type: string | null; defect: boolean };
@@ -32,7 +35,7 @@ const NEXT_STATUS: Record<string, { label: string; to: string }> = {
   review: { label: 'Done', to: 'done' },
 };
 
-export function KanbanBoard({ showCapacity, setShowCapacity, teamFilter, onClearTeam, sprintId }: KanbanBoardProps) {
+export function KanbanBoard({ showCapacity, setShowCapacity, teamFilter, onClearTeam, sprintId, openTaskId, setOpenTaskId }: KanbanBoardProps) {
   const qc = useQueryClient();
   const { data: tasks = [], isLoading } = useTasks();
   const { data: members = [] } = useTeamMembers();
@@ -50,7 +53,6 @@ export function KanbanBoard({ showCapacity, setShowCapacity, teamFilter, onClear
   const [showForm, setShowForm] = useState(false);
   const [showSprintForm, setShowSprintForm] = useState(false);
   const [openRunId, setOpenRunId] = useState<string | null>(null);
-  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
 
   // Resolve the open run/task from the polled lists each render so drawers stay live.
   const openRun = openRunId ? agentRuns.find((r) => r.id === openRunId) : undefined;

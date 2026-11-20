@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AppShell } from './layout/AppShell';
 import { type Page } from './layout/Sidebar';
 import { KanbanBoard } from './features/board/KanbanBoard';
@@ -19,6 +19,8 @@ import { BriefsPage } from './features/briefs/BriefsPage';
 import { AskPage } from './features/ask/AskPage';
 import { AgentActivityProvider } from './notifications/AgentActivityContext';
 import { StandupForm } from './features/standup/StandupForm';
+import { CommandPalette } from './ui/CommandPalette';
+import type { MemberHit, TaskHit } from './types';
 
 // A standup link (?standup=<round>[&member=<id>]) opens just the answer form.
 const params = new URLSearchParams(window.location.search);
@@ -37,6 +39,32 @@ function MainApp() {
   const [streamId, setStreamId] = useState<string | null>(null);
   // null = "the active sprint"; set when drilling into a specific one.
   const [sprintId, setSprintId] = useState<string | null>(null);
+  // Open task drawer lives here so the Ctrl/Cmd+K palette can preset it.
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+
+  // Ctrl/Cmd+K toggles the global search palette from anywhere.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  // Palette selections navigate exactly like clicking through the board.
+  const openTaskFromSearch = (t: TaskHit) => {
+    setSprintId(t.sprint_id);
+    setPage('board');
+    setOpenTaskId(t.id);
+  };
+  const openMemberFromSearch = (m: MemberHit) => {
+    setTeamFilter(m.name);
+    setPage('board');
+  };
 
   // Clicking a team in the sidebar filters the board/backlog by that team
   // (toggles off if it's already active) and jumps to the board so the effect
@@ -90,6 +118,8 @@ function MainApp() {
           teamFilter={teamFilter}
           onClearTeam={() => setTeamFilter(null)}
           sprintId={sprintId}
+          openTaskId={openTaskId}
+          setOpenTaskId={setOpenTaskId}
         />
       )}
       {page === 'backlog' && <BacklogView teamFilter={teamFilter} onClearTeam={() => setTeamFilter(null)} sprintId={sprintId} />}
@@ -101,6 +131,12 @@ function MainApp() {
       {page === 'portfolio' && <PortfolioView onOpenStream={openStream} />}
       {page === 'stream' && streamId && <StreamView streamId={streamId} />}
     </AppShell>
+    <CommandPalette
+      open={paletteOpen}
+      onClose={() => setPaletteOpen(false)}
+      onSelectTask={openTaskFromSearch}
+      onSelectMember={openMemberFromSearch}
+    />
     </AgentActivityProvider>
   );
 }

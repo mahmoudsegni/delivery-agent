@@ -12,6 +12,7 @@ from app.api.v1.exec import router as exec_router
 from app.api.v1.features import router as features_router
 from app.api.v1.portfolio import router as portfolio_router
 from app.api.v1.sprints import router as sprints_router
+from app.api.v1.search import router as search_router
 from app.api.v1.standup import router as standup_router
 from app.api.v1.streams import router as streams_router
 from app.api.v1.tasks import router as tasks_router
@@ -31,6 +32,7 @@ router = APIRouter()
 router.include_router(team_router)
 router.include_router(tasks_router)
 router.include_router(sprints_router)
+router.include_router(search_router)
 router.include_router(features_router)
 router.include_router(agent.router)
 router.include_router(standup_router)

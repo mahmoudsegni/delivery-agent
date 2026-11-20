@@ -6,6 +6,7 @@ import type {
   MemberAbsence,
   CostByStreamResponse, DeliverySummary, FlowMetrics, IntegrationHealth, InvestmentProfileResponse, InvestmentTrendResponse, RoadmapResponse,
   SprintBurndown, SprintDashboard, SprintForecast, TeamLoadRow, VelocityResponse, WorkforceTrend,
+  SearchResults,
 } from '../types';
 
 // Base URL for the backend. Empty in local dev (`npm run dev`) so paths stay
@@ -384,4 +385,8 @@ export async function snapshotSprint(sprintId: string): Promise<{ snapshotted: b
   return json<{ snapshotted: boolean }>(
     await apiFetch(`/api/v1/dashboard/sprint/${sprintId}/snapshot`, { method: 'POST' }),
   );
+}
+
+export async function search(q: string): Promise<SearchResults> {
+  return json<SearchResults>(await apiFetch(`/api/v1/search?q=${encodeURIComponent(q)}`));
 }

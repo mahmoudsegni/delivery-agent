@@ -1,4 +1,5 @@
 // React Query hooks over the backend API. One QueryClient is provided in main.tsx.
+import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import type { AskMessage, AutopilotUpdate, FeatureCreate, SprintCreate, TaskCreate, TaskUpdate } from '../types';
 import {
@@ -12,6 +13,7 @@ import {
   getSprintDashboard, getTeamLoad, getVelocity, getDeliverySummary, getIntegrationHealth,
   getCostByStream, getWorkforceTrend, getFlowMetrics, getRoadmap, getBurndown, snapshotSprint,
   getForecast, getInvestmentProfile, getInvestmentTrend,
+  search,
 } from '../lib/api';
 
 export const taskKeys = { all: ['tasks'] as const };
@@ -455,5 +457,26 @@ export function useSnapshotSprint() {
       qc.invalidateQueries({ queryKey: dashboardKeys.all });
       qc.invalidateQueries({ queryKey: portfolioKeys.all });
     },
+  });
+}
+
+// Debounce a changing value (palette typing) without a dependency.
+export function useDebouncedValue<T>(value: T, ms = 250): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return debounced;
+}
+
+// Global search (issue #35). Fires only when open and >= 2 chars.
+export function useSearch(q: string, enabled: boolean) {
+  const dq = useDebouncedValue(q.trim(), 250);
+  return useQuery({
+    queryKey: ['search', dq],
+    queryFn: () => search(dq),
+    enabled: enabled && dq.length >= 2,
+    placeholderData: keepPreviousData,
   });
 }

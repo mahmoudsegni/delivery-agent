@@ -715,3 +715,22 @@ export interface RoadmapResponse {
   window_end: string | null;
   today: string;
 }
+
+// Global search (Ctrl/Cmd+K palette)
+export interface TaskHit {
+  id: string;
+  title: string;
+  status: string;
+  sprint_id: string | null;
+  sprint_name: string | null;
+  assignee_name: string | null;
+}
+export interface MemberHit {
+  id: string;
+  name: string;
+  role: string;
+}
+export interface SearchResults {
+  tasks: TaskHit[];
+  members: MemberHit[];
+}

@@ -2048,3 +2048,19 @@ button.capacity-days-off:hover { border-color: var(--accent); color: var(--ink);
   vertical-align: middle;
 }
 .wit-chip.defect { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger); }
+
+/* Command palette (Ctrl/Cmd+K) */
+.palette-input { width: 100%; margin-bottom: 8px; }
+.palette-hint { color: var(--ink-mute); font-size: 12px; padding: 8px 2px; }
+.palette-list { max-height: 320px; overflow-y: auto; }
+.palette-section-label {
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--ink-mute); padding: 6px 2px 4px;
+}
+.palette-item {
+  display: block; width: 100%; text-align: left; border: none; background: transparent;
+  border-radius: 6px; padding: 6px 8px; cursor: pointer; font-family: var(--font-body);
+}
+.palette-item.active { background: var(--accent-ring); }
+.palette-item-title { display: block; font-size: 13px; color: var(--ink); }
+.palette-item-meta { display: block; font-size: 11px; color: var(--ink-mute); }
