@@ -1,5 +1,6 @@
 """Team management service layer."""
 
+from datetime import date, timedelta
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -7,8 +8,57 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.member_absence import MemberAbsence
 from app.models.team import TeamMember
-from app.schemas.team import TeamMemberCreate, TeamMemberUpdate
+from app.schemas.team import AbsenceCreate, TeamMemberCreate, TeamMemberUpdate
+
+# Hours of capacity one absent workday removes. Weekends are not workdays.
+WORKDAY_HOURS = 8
+
+
+def count_workdays(start: date, end: date) -> int:
+    """Workdays (Mon-Fri) in [start, end], inclusive."""
+    days, cursor = 0, start
+    while cursor <= end:
+        if cursor.weekday() < 5:
+            days += 1
+        cursor += timedelta(days=1)
+    return days
+
+
+def absent_workdays(absences, sprint_start: date | None, sprint_end: date | None) -> int:
+    """Workdays lost to absences inside the sprint window (clipped to it)."""
+    if sprint_start is None or sprint_end is None:
+        return 0
+    total = 0
+    for a in absences:
+        start, end = max(a.starts_on, sprint_start), min(a.ends_on, sprint_end)
+        # ponytail: overlapping absences double-count; merge ranges if people
+        # start entering them that way.
+        if start <= end:
+            total += count_workdays(start, end)
+    return total
+
+
+def effective_capacity_hours(member: TeamMember, sprint, absences) -> int:
+    """Flat capacity minus 8h per absent workday in the sprint, clamped >= 0."""
+    absent = absent_workdays(
+        absences, getattr(sprint, "start_date", None), getattr(sprint, "end_date", None)
+    )
+    return max(0, (member.capacity_hours_per_sprint or 0) - WORKDAY_HOURS * absent)
+
+
+async def sprint_absences(
+    db: AsyncSession, sprint_start: date, sprint_end: date
+) -> list[MemberAbsence]:
+    """All absences overlapping the sprint window — one query for the whole team."""
+    result = await db.execute(
+        select(MemberAbsence).where(
+            MemberAbsence.starts_on <= sprint_end,
+            MemberAbsence.ends_on >= sprint_start,
+        )
+    )
+    return list(result.scalars().all())
 
 
 class TeamService:
@@ -159,3 +209,46 @@ class TeamService:
         member.is_available = not member.is_available
         await self.db.flush()
         return member
+
+    async def list_absences(
+        self,
+        member_id: UUID | None = None,
+        from_on: date | None = None,
+        to_on: date | None = None,
+    ) -> list[MemberAbsence]:
+        """List absences, optionally narrowed to one member and/or date window."""
+        stmt = select(MemberAbsence).order_by(MemberAbsence.starts_on)
+        if member_id is not None:
+            stmt = stmt.where(MemberAbsence.member_id == member_id)
+        if from_on is not None:
+            stmt = stmt.where(MemberAbsence.ends_on >= from_on)
+        if to_on is not None:
+            stmt = stmt.where(MemberAbsence.starts_on <= to_on)
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
+
+    async def create_absence(self, member_id: UUID, data: AbsenceCreate) -> MemberAbsence:
+        """Record an absence for a member (dates validated by the schema)."""
+        await self.get_member(member_id)  # 404 when the member does not exist
+        absence = MemberAbsence(member_id=member_id, **data.model_dump())
+        self.db.add(absence)
+        await self.db.flush()
+        return absence
+
+    async def delete_absence(self, absence_id: UUID) -> None:
+        """Delete an absence.
+
+        Raises:
+            HTTPException: 404 if absence not found
+        """
+        result = await self.db.execute(
+            select(MemberAbsence).where(MemberAbsence.id == absence_id)
+        )
+        absence = result.scalar_one_or_none()
+        if absence is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Absence with id {absence_id} not found",
+            )
+        await self.db.delete(absence)
+        await self.db.flush()

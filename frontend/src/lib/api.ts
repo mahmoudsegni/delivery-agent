@@ -3,6 +3,7 @@ import type {
   AgentRun, AskMessage, AskResponse, AutopilotState, AutopilotUpdate, Brief, CodingStats,
   DecisionItem, Feature, FeatureCreate, PortfolioResponse, Proposal, RepoCreateResponse,
   RunEventsResponse, Sprint, SprintCreate, StreamDetail, StreamListItem, Task, TaskCreate, TaskUpdate, TeamMember,
+  MemberAbsence,
   CostByStreamResponse, DeliverySummary, FlowMetrics, IntegrationHealth, InvestmentProfileResponse, InvestmentTrendResponse, RoadmapResponse,
   SprintBurndown, SprintDashboard, SprintForecast, TeamLoadRow, VelocityResponse, WorkforceTrend,
 } from '../types';
@@ -80,6 +81,17 @@ export async function updateTask(id: string, body: TaskUpdate): Promise<Task> {
 export async function listTeamMembers(): Promise<TeamMember[]> {
   const data = await json<{ members: TeamMember[]; total: number }>(await apiFetch('/api/v1/team/members'));
   return data.members;
+}
+
+export async function listAbsences(from?: string, to?: string): Promise<MemberAbsence[]> {
+  const qs = new URLSearchParams();
+  if (from) qs.set('from', from);
+  if (to) qs.set('to', to);
+  const suffix = qs.size ? `?${qs}` : '';
+  const data = await json<{ absences: MemberAbsence[] }>(
+    await apiFetch(`/api/v1/team/absences${suffix}`)
+  );
+  return data.absences;
 }
 
 // ---- Sprints ----

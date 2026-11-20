@@ -13,6 +13,14 @@ export interface TeamMember {
   updated_at: string | null;
 }
 
+export interface MemberAbsence {
+  id: string;
+  member_id: string;
+  starts_on: string;
+  ends_on: string;
+  note: string | null;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -509,6 +517,7 @@ export interface TeamLoadRow {
   name: string;
   role: string | null;
   capacity_hours: number;
+  absent_hours: number;
   assigned_hours: number;
   open_points: number;
   in_progress: number;

@@ -370,6 +370,7 @@
   border-radius: 0 var(--radius-pill) var(--radius-pill) 0;
 }
 .capacity-member-text { font-family: var(--font-mono); font-size: 11px; color: var(--ink-mute); font-weight: 500; margin-top: 6px; }
+.capacity-days-off { margin-left: 6px; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink-mute); }
 
 /* ============================================================
    STATS / CAPACITY VIEW

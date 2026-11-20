@@ -2,7 +2,7 @@
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import type { AskMessage, AutopilotUpdate, FeatureCreate, SprintCreate, TaskCreate, TaskUpdate } from '../types';
 import {
-  listTasks, createTask, updateTask, listTeamMembers, getSprints, createSprint,
+  listTasks, createTask, updateTask, listTeamMembers, listAbsences, getSprints, createSprint,
   getFeatures, createFeature, getCodingRepositories, createCodingRepository,
   createProposal, type CreateProposalBody, listProposals,
   getPortfolio, getStreams, getStream, approveProposal, rejectProposal,
@@ -43,6 +43,13 @@ export function useTasks() {
 
 export function useTeamMembers() {
   return useQuery({ queryKey: teamKeys.all, queryFn: listTeamMembers });
+}
+
+export function useAbsences(from?: string, to?: string) {
+  return useQuery({
+    queryKey: ['absences', from ?? null, to ?? null],
+    queryFn: () => listAbsences(from, to),
+  });
 }
 
 export function useSprints() {

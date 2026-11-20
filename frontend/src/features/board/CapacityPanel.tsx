@@ -1,5 +1,5 @@
-import { DEFAULT_CAPACITY_HOURS, currentSprintId } from '../../lib/capacity';
-import { useSprints, useTasks, useTeamMembers } from '../../hooks/useApi';
+import { DEFAULT_CAPACITY_HOURS, WORKDAY_HOURS, countWorkdays, currentSprintId } from '../../lib/capacity';
+import { useAbsences, useSprints, useTasks, useTeamMembers } from '../../hooks/useApi';
 
 type CapacityPanelProps = {
   /** Sprint selected on the board, or null for its "all sprints" view. */
@@ -19,6 +19,22 @@ export function CapacityPanel({ sprintId }: CapacityPanelProps) {
   const scopedTo = sprintId ?? currentSprintId(sprints);
   const scopedSprint = sprints.find((s) => s.id === scopedTo);
   const inSprint = scopedTo ? tasks.filter((t) => t.sprint_id === scopedTo) : [];
+
+  // Dated time off prorates the bar: same 8h-per-workday math the backend
+  // applies to team-load and the agent's sprint drafts.
+  const { data: absences = [] } = useAbsences(scopedSprint?.start_date, scopedSprint?.end_date);
+  const daysOffByMember = new Map<string, number>();
+  if (scopedSprint) {
+    for (const a of absences) {
+      const start = a.starts_on > scopedSprint.start_date ? a.starts_on : scopedSprint.start_date;
+      const end = a.ends_on < scopedSprint.end_date ? a.ends_on : scopedSprint.end_date;
+      if (start > end) continue;
+      daysOffByMember.set(
+        a.member_id,
+        (daysOffByMember.get(a.member_id) || 0) + countWorkdays(start, end)
+      );
+    }
+  }
 
   const assignedByMember = new Map<string, number>();
   for (const t of inSprint) {
@@ -48,7 +64,9 @@ export function CapacityPanel({ sprintId }: CapacityPanelProps) {
       <div className="capacity-panel-list">
         {ordered.map((member) => {
           const assigned = assignedByMember.get(member.id) || 0;
-          const capacity = member.capacity_hours_per_sprint || DEFAULT_CAPACITY_HOURS;
+          const daysOff = daysOffByMember.get(member.id) || 0;
+          const base = member.capacity_hours_per_sprint || DEFAULT_CAPACITY_HOURS;
+          const capacity = Math.max(0, base - daysOff * WORKDAY_HOURS);
           const percent = Math.min((assigned / capacity) * 100, 100);
           const overCapacity = assigned > capacity;
           return (
@@ -68,6 +86,7 @@ export function CapacityPanel({ sprintId }: CapacityPanelProps) {
               </div>
               <div className="capacity-member-text">
                 {assigned}h / {capacity}h
+                {daysOff > 0 && <span className="capacity-days-off">{daysOff}d off</span>}
               </div>
             </div>
           );

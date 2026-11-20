@@ -61,6 +61,7 @@ from app.schemas.dashboard import (
 )
 from app.services.agent_analysis_service import CONTAINER_TYPES
 from app.services.confidence_service import ConfidenceService
+from app.services.team_service import WORKDAY_HOURS, absent_workdays, sprint_absences
 
 # An item counts as stale after this long without a change. Matches the
 # threshold DatabaseTools already uses so the dashboards, the brief and the
@@ -336,10 +337,22 @@ class DashboardService:
 
         Deliberately not a wrapper over ``DatabaseTools.get_developer_status``,
         which issues a query per member.
+
+        ``capacity_hours`` is prorated by dated absences (8h per absent
+        workday in the sprint, clamped at 0); ``absent_hours`` carries the
+        deduction so the UI can badge it.
         """
+        sprint: Sprint | None = None
         if sprint_id is None:
             sprint = await self._resolve_sprint(None)
             sprint_id = sprint.id if sprint else None
+        else:
+            sprint = await self._resolve_sprint(sprint_id)
+
+        absences_by_member: dict = {}
+        if sprint is not None:
+            for a in await sprint_absences(self.db, sprint.start_date, sprint.end_date):
+                absences_by_member.setdefault(a.member_id, []).append(a)
 
         join_on = Task.assignee_id == TeamMember.id
         if sprint_id:
@@ -386,20 +399,28 @@ class DashboardService:
             )
             .order_by(TeamMember.name)
         )
-        return [
-            TeamLoadRow(
-                id=r.id,
-                name=r.name,
-                role=r.role,
-                capacity_hours=r.capacity_hours_per_sprint or 0,
-                assigned_hours=int(r.assigned_hours or 0),
-                open_points=int(r.open_points or 0),
-                in_progress=r.in_progress or 0,
-                done=r.done or 0,
-                stale=r.stale or 0,
+        rows: list[TeamLoadRow] = []
+        for r in result.all():
+            absent_hours = WORKDAY_HOURS * absent_workdays(
+                absences_by_member.get(r.id, []),
+                sprint.start_date if sprint else None,
+                sprint.end_date if sprint else None,
             )
-            for r in result.all()
-        ]
+            rows.append(
+                TeamLoadRow(
+                    id=r.id,
+                    name=r.name,
+                    role=r.role,
+                    capacity_hours=max(0, (r.capacity_hours_per_sprint or 0) - absent_hours),
+                    absent_hours=absent_hours,
+                    assigned_hours=int(r.assigned_hours or 0),
+                    open_points=int(r.open_points or 0),
+                    in_progress=r.in_progress or 0,
+                    done=r.done or 0,
+                    stale=r.stale or 0,
+                )
+            )
+        return rows
 
     # ------------------------------------------------------------------
     # velocity

@@ -31,6 +31,7 @@ from app.models.sprint import Sprint
 from app.models.task import Task
 from app.models.team import TeamMember
 from app.services.groq_client import GroqError, groq_json
+from app.services.team_service import effective_capacity_hours, sprint_absences
 
 logger = logging.getLogger(__name__)
 
@@ -199,6 +200,17 @@ class AgentAnalysisService:
         current = self._current_sprint(sprints, as_of.date())
         load = await self._open_load(current.id if current else None)
 
+        # Prorate overload flags by dated absences in the current sprint.
+        absences_by_member: dict[str, list] = defaultdict(list)
+        if current:
+            for a in await sprint_absences(self.db, current.start_date, current.end_date):
+                absences_by_member[a.member_id].append(a)
+
+        def effective_cap(member: TeamMember) -> int:
+            return effective_capacity_hours(
+                member, current, absences_by_member.get(member.id, [])
+            )
+
         candidates = (
             await self.db.execute(
                 select(Task).where(
@@ -283,9 +295,9 @@ class AgentAnalysisService:
 
         overloaded = [
             {"member": members[mid].name, "hours": v["hours"], "items": v["items"],
-             "capacity": members[mid].capacity_hours_per_sprint}
+             "capacity": effective_cap(members[mid])}
             for mid, v in load.items()
-            if mid in members and v["hours"] > members[mid].capacity_hours_per_sprint
+            if mid in members and v["hours"] > effective_cap(members[mid])
         ]
 
         high = sum(b["severity"] == "High" for b in blockers)
@@ -371,6 +383,14 @@ class AgentAnalysisService:
         pool = await self._team_pool(sprints, today) or {m.id for m in members.values() if m.is_available}
         committed = await self._open_load(target.id if target else None)
 
+        # Capacity rows the sprint-draft prompt sees: prorated by absences in
+        # the sprint being planned, so the agent stops drafting work for
+        # people who are partly away.
+        absences_by_member: dict[str, list] = defaultdict(list)
+        if target:
+            for a in await sprint_absences(self.db, target.start_date, target.end_date):
+                absences_by_member[a.member_id].append(a)
+
         # Velocity: plannable items finished per recent completed sprint.
         done_sprints = [s for s in sprints if s.end_date < today][:3]
         velocity_items: list[int] = []
@@ -421,9 +441,10 @@ class AgentAnalysisService:
             if not m:
                 continue
             used = committed[mid]["hours"]
+            cap = effective_capacity_hours(m, target, absences_by_member.get(mid, []))
             capacity_rows.append({
-                "member": m.name, "capacity": m.capacity_hours_per_sprint,
-                "committed": used, "available": m.capacity_hours_per_sprint - used,
+                "member": m.name, "capacity": cap,
+                "committed": used, "available": cap - used,
             })
         total_cap = sum(r["capacity"] for r in capacity_rows)
         total_committed = sum(r["committed"] for r in capacity_rows)

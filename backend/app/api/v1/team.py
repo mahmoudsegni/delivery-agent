@@ -1,12 +1,16 @@
 """Team management API endpoints."""
 
+from datetime import date
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.schemas.team import (
+    AbsenceCreate,
+    AbsenceListResponse,
+    AbsenceResponse,
     TeamMemberCreate,
     TeamMemberListResponse,
     TeamMemberResponse,
@@ -166,3 +170,81 @@ async def toggle_team_member_availability(
     service = TeamService(db)
     member = await service.toggle_availability(member_id)
     return TeamMemberResponse.model_validate(member)
+
+
+@router.get("/absences", response_model=AbsenceListResponse)
+async def list_absences(
+    member_id: UUID | None = None,
+    from_on: date | None = Query(default=None, alias="from"),
+    to_on: date | None = Query(default=None, alias="to"),
+    db: AsyncSession = Depends(get_db),
+) -> AbsenceListResponse:
+    """
+    List absences, optionally narrowed to one member and/or a date window.
+
+    Args:
+        member_id: Optional UUID to filter by member
+        from_on: Optional window start (alias "from"); keeps absences ending on/after it
+        to_on: Optional window end (alias "to"); keeps absences starting on/before it
+        db: Database session
+
+    Returns:
+        Absences matching the filters
+    """
+    service = TeamService(db)
+    absences = await service.list_absences(member_id=member_id, from_on=from_on, to_on=to_on)
+    return AbsenceListResponse(
+        absences=[AbsenceResponse.model_validate(a) for a in absences]
+    )
+
+
+@router.post(
+    "/members/{member_id}/absences",
+    response_model=AbsenceResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_absence(
+    member_id: UUID,
+    data: AbsenceCreate,
+    db: AsyncSession = Depends(get_db),
+) -> AbsenceResponse:
+    """
+    Record an absence for a team member.
+
+    Args:
+        member_id: UUID of the team member
+        data: Inclusive date range (validated starts_on <= ends_on) + optional note
+        db: Database session
+
+    Returns:
+        Created absence
+
+    Raises:
+        404: If member not found
+        422: If dates are invalid
+    """
+    service = TeamService(db)
+    absence = await service.create_absence(member_id, data)
+    return AbsenceResponse.model_validate(absence)
+
+
+@router.delete(
+    "/absences/{absence_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_absence(
+    absence_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """
+    Delete an absence.
+
+    Args:
+        absence_id: UUID of the absence
+        db: Database session
+
+    Raises:
+        404: If absence not found
+    """
+    service = TeamService(db)
+    await service.delete_absence(absence_id)

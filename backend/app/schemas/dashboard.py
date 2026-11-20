@@ -88,6 +88,7 @@ class TeamLoadRow(BaseModel):
     name: str
     role: str | None = None
     capacity_hours: int
+    absent_hours: int = 0
     assigned_hours: int
     open_points: int
     in_progress: int

@@ -1,10 +1,10 @@
 """Pydantic schemas for team management API."""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 
 class TeamMemberCreate(BaseModel):
@@ -47,3 +47,36 @@ class TeamMemberListResponse(BaseModel):
 
     members: list[TeamMemberResponse]
     total: int
+
+
+class AbsenceCreate(BaseModel):
+    """Schema for recording a member absence (inclusive date range)."""
+
+    starts_on: date
+    ends_on: date
+    note: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def dates_ordered(self) -> "AbsenceCreate":
+        if self.ends_on < self.starts_on:
+            raise ValueError("ends_on must not be before starts_on")
+        return self
+
+
+class AbsenceResponse(BaseModel):
+    """Schema for an absence response."""
+
+    id: UUID
+    member_id: UUID
+    starts_on: date
+    ends_on: date
+    note: str | None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AbsenceListResponse(BaseModel):
+    """Schema for list of absences response."""
+
+    absences: list[AbsenceResponse]
