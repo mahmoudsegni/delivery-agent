@@ -32,6 +32,18 @@ export function countWorkdays(start: string, end: string): number {
 }
 
 /**
+ * True when an absence window overlaps [start, end] (inclusive ISO dates).
+ * One definition so the rail's proration and the time-off list never disagree.
+ */
+export function overlapsWindow(
+  absence: { starts_on: string; ends_on: string },
+  start: string,
+  end: string,
+): boolean {
+  return absence.starts_on <= end && absence.ends_on >= start;
+}
+
+/**
  * The sprint containing today, latest first when several overlap.
  *
  * Not `status === 'active'`: more than one sprint can carry that flag, so the

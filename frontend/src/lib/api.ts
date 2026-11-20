@@ -54,7 +54,15 @@ export function apiFetch(path: string, init?: RequestInit): Promise<Response> {
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error((body as any).detail || `Request failed: ${res.status}`);
+    // FastAPI validation errors arrive as detail: [{msg, loc, ...}] — surface
+    // the messages, not "[object Object]".
+    const detail = (body as any).detail;
+    const text = typeof detail === 'string'
+      ? detail
+      : Array.isArray(detail)
+        ? detail.map((d: any) => d?.msg || JSON.stringify(d)).join('; ')
+        : '';
+    throw new Error(text || `Request failed: ${res.status}`);
   }
   return res.json() as Promise<T>;
 }
@@ -92,6 +100,27 @@ export async function listAbsences(from?: string, to?: string): Promise<MemberAb
     await apiFetch(`/api/v1/team/absences${suffix}`)
   );
   return data.absences;
+}
+
+export async function createAbsence(
+  memberId: string,
+  starts_on: string,
+  ends_on: string,
+  note?: string,
+): Promise<MemberAbsence> {
+  return json<MemberAbsence>(
+    await apiFetch(`/api/v1/team/members/${memberId}/absences`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ starts_on, ends_on, note }),
+    })
+  );
+}
+
+// 204 No Content — no body to parse, so no json() wrapper here.
+export async function deleteAbsence(id: string): Promise<void> {
+  const res = await apiFetch(`/api/v1/team/absences/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`Request failed: ${res.status}`);
 }
 
 // ---- Sprints ----

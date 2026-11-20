@@ -352,10 +352,16 @@
 .capacity-panel-scope { font-size: 11px; font-weight: 600; color: var(--ink-soft); white-space: nowrap; }
 .capacity-panel-list { flex: 1; overflow-y: auto; padding: 16px 18px; }
 .capacity-member { margin-bottom: 18px; }
-.capacity-member-name {
-  font-size: 12.5px; font-weight: 500; margin-bottom: 7px; color: var(--ink);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+.capacity-member-name { display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 500; margin-bottom: 7px; color: var(--ink); }
+.capacity-member-name-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Hover affordance; opacity (not visibility) keeps it keyboard-focusable. */
+.capacity-add-off {
+  border: 1px solid var(--line); background: transparent; color: var(--ink-soft);
+  border-radius: 999px; font-size: 11px; line-height: 1; padding: 2px 7px; cursor: pointer;
+  opacity: 0; transition: opacity var(--t-fast) var(--ease);
 }
+.capacity-member:hover .capacity-add-off, .capacity-add-off:focus-visible { opacity: 1; }
+.capacity-add-off:hover { border-color: var(--accent); color: var(--accent); }
 .capacity-member-bar {
   height: 7px;
   background: var(--surface-3);
@@ -371,6 +377,57 @@
 }
 .capacity-member-text { font-family: var(--font-mono); font-size: 11px; color: var(--ink-mute); font-weight: 500; margin-top: 6px; }
 .capacity-days-off { margin-left: 6px; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink-mute); }
+button.capacity-days-off { background: none; font: inherit; cursor: pointer; }
+button.capacity-days-off:hover { border-color: var(--accent); color: var(--ink); }
+
+/* Add / remove time off from the rail (native date inputs, no picker lib). */
+.capacity-timeoff-form { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 4px; }
+.capacity-timeoff-form input {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 11px;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+}
+.capacity-timeoff-actions { display: flex; gap: 6px; }
+.capacity-timeoff-actions button {
+  font-size: 11px;
+  font-weight: 550;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+.capacity-timeoff-actions button[type='submit'] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.capacity-timeoff-actions button:disabled { opacity: 0.6; cursor: default; }
+.capacity-timeoff-error { color: var(--danger); font-size: 11px; }
+
+.capacity-absence-list { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
+.capacity-absence-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink-soft);
+}
+.capacity-absence-item span:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.capacity-absence-item button {
+  border: none;
+  background: none;
+  padding: 0 2px;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--ink-mute);
+  cursor: pointer;
+}
+.capacity-absence-item button:hover { color: var(--danger); }
 
 /* ============================================================
    STATS / CAPACITY VIEW

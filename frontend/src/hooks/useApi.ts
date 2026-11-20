@@ -2,7 +2,7 @@
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import type { AskMessage, AutopilotUpdate, FeatureCreate, SprintCreate, TaskCreate, TaskUpdate } from '../types';
 import {
-  listTasks, createTask, updateTask, listTeamMembers, listAbsences, getSprints, createSprint,
+  listTasks, createTask, updateTask, listTeamMembers, listAbsences, createAbsence, deleteAbsence, getSprints, createSprint,
   getFeatures, createFeature, getCodingRepositories, createCodingRepository,
   createProposal, type CreateProposalBody, listProposals,
   getPortfolio, getStreams, getStream, approveProposal, rejectProposal,
@@ -49,6 +49,31 @@ export function useAbsences(from?: string, to?: string) {
   return useQuery({
     queryKey: ['absences', from ?? null, to ?? null],
     queryFn: () => listAbsences(from, to),
+  });
+}
+
+export function useCreateAbsence() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (a: { memberId: string; starts_on: string; ends_on: string; note?: string }) =>
+      createAbsence(a.memberId, a.starts_on, a.ends_on, a.note),
+    onSuccess: () => {
+      // The rail recomputes bars client-side from this query; team_load rows
+      // on the dashboard carry absent_hours too.
+      qc.invalidateQueries({ queryKey: ['absences'] });
+      qc.invalidateQueries({ queryKey: dashboardKeys.all });
+    },
+  });
+}
+
+export function useDeleteAbsence() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deleteAbsence(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['absences'] });
+      qc.invalidateQueries({ queryKey: dashboardKeys.all });
+    },
   });
 }
 
