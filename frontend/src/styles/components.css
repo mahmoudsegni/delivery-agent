@@ -2066,4 +2066,6 @@ button.capacity-days-off:hover { border-color: var(--accent); color: var(--ink);
 }
 .palette-item.active { background: var(--accent-ring); }
 .palette-item-title { display: block; font-size: 13px; color: var(--ink); }
+.palette-action-title { display: flex; align-items: center; gap: 6px; }
+.palette-action-title svg { flex: none; color: var(--accent, currentColor); }
 .palette-item-meta { display: block; font-size: 11px; color: var(--ink-mute); }

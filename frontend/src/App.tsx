@@ -20,6 +20,8 @@ import { AskPage } from './features/ask/AskPage';
 import { AgentActivityProvider } from './notifications/AgentActivityContext';
 import { StandupForm } from './features/standup/StandupForm';
 import { CommandPalette } from './ui/CommandPalette';
+import { useSprints, useSnapshotSprint } from './hooks/useApi';
+import type { PaletteAction } from './lib/paletteItems';
 import type { MemberHit, TaskHit } from './types';
 
 // A standup link (?standup=<round>[&member=<id>]) opens just the answer form.
@@ -65,6 +67,36 @@ function MainApp() {
     setTeamFilter(m.name);
     setPage('board');
   };
+
+  // Palette verbs act on the sprint in view; when none is selected that is the
+  // active one (same meaning null carries everywhere else in the app).
+  const { data: sprints = [] } = useSprints();
+  const snapshot = useSnapshotSprint();
+  const currentSprintId = sprintId ?? sprints.find((s) => s.status === 'active')?.id ?? null;
+
+  const paletteActions: PaletteAction[] = [
+    ...(currentSprintId
+      ? [
+          {
+            id: 'snapshot-sprint',
+            label: 'Snapshot current sprint',
+            run: () => snapshot.mutate(currentSprintId),
+          },
+          {
+            id: 'export-sprint-csv',
+            label: 'Export sprint CSV',
+            run: () => {
+              window.location.href = `/api/v1/sprints/${currentSprintId}/export.csv`;
+            },
+          },
+        ]
+      : []),
+    { id: 'go-board', label: 'Go to Board', run: () => setPage('board') },
+    { id: 'go-delivery', label: 'Go to Sprint Dashboard', run: () => setPage('delivery') },
+    { id: 'go-briefs', label: 'Go to Briefs', run: () => setPage('briefs') },
+    { id: 'go-prs', label: 'Go to PRs', run: () => setPage('prs') },
+    { id: 'go-command', label: 'Go to Command Center', run: () => setPage('command') },
+  ];
 
   // Clicking a team in the sidebar filters the board/backlog by that team
   // (toggles off if it's already active) and jumps to the board so the effect
@@ -134,6 +166,7 @@ function MainApp() {
     <CommandPalette
       open={paletteOpen}
       onClose={() => setPaletteOpen(false)}
+      actions={paletteActions}
       onSelectTask={openTaskFromSearch}
       onSelectMember={openMemberFromSearch}
     />
