@@ -52,6 +52,7 @@ services:
       - DEBUG=true
       # Optional passcode gate for exposed deployments (issue #8)
       - PASSCODE=${PASSCODE:-}
+      - ICS_TOKEN=${ICS_TOKEN:-}
       - GROQ_API_KEY=${GROQ_API_KEY:-}
       - GROQ_MODEL=openai/gpt-oss-120b
       # Demo mode: replay recorded agent responses (zero API keys needed)

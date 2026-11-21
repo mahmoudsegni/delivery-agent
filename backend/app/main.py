@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+import secrets
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -75,6 +76,16 @@ async def passcode_gate(request: Request, call_next):
             return JSONResponse(
                 {"detail": "Too many attempts. Try again later."}, status_code=429
             )
+        # Calendar apps can't do the cookie unlock: a shared ICS_TOKEN in the
+        # query string exempts the feed. Empty ics_token = no exemption.
+        if (
+            settings.ics_token
+            and path == "/api/v1/team/calendar.ics"
+            and secrets.compare_digest(
+                request.query_params.get("token", ""), settings.ics_token
+            )
+        ):
+            return await call_next(request)
         if not passcode_ok(
             request.cookies.get(PASSCODE_COOKIE) or request.headers.get("X-Passcode")
         ):

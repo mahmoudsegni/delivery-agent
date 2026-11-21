@@ -3,10 +3,14 @@
 from datetime import date
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.models.member_absence import MemberAbsence
+from app.models.sprint import Sprint
+from app.models.team import TeamMember
 from app.schemas.team import (
     AbsenceCreate,
     AbsenceListResponse,
@@ -16,9 +20,41 @@ from app.schemas.team import (
     TeamMemberResponse,
     TeamMemberUpdate,
 )
-from app.services.team_service import TeamService
+from app.services.team_service import TeamService, build_ics
 
 router = APIRouter(prefix="/team", tags=["team"])
+
+
+@router.get("/calendar.ics")
+async def team_calendar_ics(db: AsyncSession = Depends(get_db)) -> Response:
+    """ICS feed of sprint windows + member time off for Outlook/Google.
+
+    Calendar apps can't do the passcode cookie unlock; expose `ICS_TOKEN`
+    and subscribe at `/api/v1/team/calendar.ics?token=...`.
+    """
+    sprints = (
+        (await db.execute(select(Sprint).order_by(Sprint.start_date)))
+        .scalars()
+        .all()
+    )
+    absences = (
+        await db.execute(
+            select(
+                MemberAbsence.id,
+                MemberAbsence.starts_on,
+                MemberAbsence.ends_on,
+                MemberAbsence.note,
+                TeamMember.name.label("member_name"),
+            )
+            .join(TeamMember, MemberAbsence.member_id == TeamMember.id)
+            .order_by(MemberAbsence.starts_on)
+        )
+    ).all()
+    return Response(
+        content=build_ics(sprints, absences),
+        media_type="text/calendar",
+        headers={"Content-Disposition": 'attachment; filename="team.ics"'},
+    )
 
 
 @router.get("/members", response_model=TeamMemberListResponse)

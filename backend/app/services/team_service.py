@@ -61,6 +61,77 @@ async def sprint_absences(
     return list(result.scalars().all())
 
 
+def build_ics(sprints, absences) -> str:
+    """RFC 5545 feed: sprints + member time off as all-day VEVENTs.
+
+    Pure builder — the endpoint just queries and hands rows in. Stable UIDs
+    mean calendar apps update events in place on re-subscribe instead of
+    duplicating them. Hand-rolled on purpose: the format is ~30 lines.
+    """
+    lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//delivery-agent//team-calendar//EN",
+    ]
+    for s in sprints:
+        lines += _vevent(
+            summary=f"Sprint {s.name} ({s.status})",
+            uid=f"sprint-{s.id}@delivery-agent",
+            start=s.start_date,
+            end=s.end_date,
+        )
+    for a in absences:
+        lines += _vevent(
+            summary=f"{a.member_name} — time off",
+            uid=f"absence-{a.id}@delivery-agent",
+            start=a.starts_on,
+            end=a.ends_on,
+            description=a.note,
+        )
+    lines.append("END:VCALENDAR")
+    # ponytail: fold counts chars, not octets — fine until non-ASCII names
+    # push a line past 75 bytes; switch to byte folding if apps complain.
+    return "\r\n".join(_fold(line) for line in lines) + "\r\n"
+
+
+def _vevent(summary: str, uid: str, start: date, end: date, description=None) -> list[str]:
+    lines = [
+        "BEGIN:VEVENT",
+        f"SUMMARY:{_escape(summary)}",
+        f"DTSTART;VALUE=DATE:{start:%Y%m%d}",
+        # RFC 5545 DTEND is exclusive; our dates are inclusive.
+        f"DTEND;VALUE=DATE:{end + timedelta(days=1):%Y%m%d}",
+        f"UID:{uid}",
+    ]
+    if description:
+        lines.append(f"DESCRIPTION:{_escape(description)}")
+    lines.append("END:VEVENT")
+    return lines
+
+
+def _escape(text: str) -> str:
+    """Escape RFC 5545 special chars; backslash first so ours aren't doubled."""
+    return (
+        text.replace("\\", "\\\\")
+        .replace(";", "\\;")
+        .replace(",", "\\,")
+        .replace("\r\n", "\\n")
+        .replace("\r", "\\n")
+        .replace("\n", "\\n")
+    )
+
+
+def _fold(line: str) -> str:
+    """RFC 5545 3.1: content lines stay <= 75 chars; continuation starts with a space."""
+    if len(line) <= 74:
+        return line
+    out, rest = line[:74], line[74:]
+    while rest:
+        out += "\r\n " + rest[:73]
+        rest = rest[73:]
+    return out
+
+
 class TeamService:
     """Service class for team member operations."""
 

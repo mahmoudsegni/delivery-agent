@@ -58,6 +58,10 @@ class Settings(BaseSettings):
     # cookie (unlocked at /api/v1/passcode) or an X-Passcode header.
     passcode: str = ""
 
+    # Shared secret letting calendar apps fetch the ICS feed past the
+    # passcode gate (they can't do the cookie unlock). Empty = no exemption.
+    ics_token: str = ""
+
     # Debug mode
     debug: bool = True
 
