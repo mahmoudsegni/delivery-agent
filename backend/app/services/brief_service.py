@@ -143,7 +143,7 @@ class BriefService:
 
         snapshot = await self.assemble_snapshot()
         data = await groq_json(
-            self._build_prompt(on_date, snapshot), _BRIEF_SYSTEM_PROMPT
+            self._build_prompt(on_date, snapshot), _BRIEF_SYSTEM_PROMPT, feature="brief"
         )
 
         if brief is None:

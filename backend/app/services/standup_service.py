@@ -54,6 +54,7 @@ async def _analyze_standup_json(prompt: str) -> dict:
             {"role": "user", "content": prompt},
         ],
         temperature=0.4,
+        feature="standup",
     )
     return extract_json(content)
 

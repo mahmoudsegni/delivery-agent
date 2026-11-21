@@ -110,4 +110,4 @@ class AskService:
             if role in ("user", "assistant") and content:
                 messages.append({"role": role, "content": content})
         messages.append({"role": "user", "content": question})
-        return await groq_chat(messages)
+        return await groq_chat(messages, feature="ask")

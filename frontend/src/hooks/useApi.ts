@@ -12,7 +12,7 @@ import {
   listBriefs, getLatestBrief, generateBrief, askDeliveryManager,
   getSprintDashboard, getTeamLoad, getVelocity, getDeliverySummary, getIntegrationHealth,
   getCostByStream, getWorkforceTrend, getFlowMetrics, getRoadmap, getBurndown, snapshotSprint,
-  getForecast, getInvestmentProfile, getInvestmentTrend,
+  getForecast, getInvestmentProfile, getInvestmentTrend, getLlmUsage,
   search,
 } from '../lib/api';
 
@@ -320,6 +320,7 @@ export const dashboardKeys = {
   delivery: (days: number, streamId?: string | null) =>
     ['dashboard', 'delivery', days, streamId ?? 'all'] as const,
   integrations: ['dashboard', 'integrations'] as const,
+  llmUsage: (days = 7) => ['dashboard', 'llm-usage', days] as const,
   costByStream: (days?: number | null) => ['dashboard', 'cost-by-stream', days ?? 'all'] as const,
   investment: (sprintId?: string | null) =>
     ['dashboard', 'investment', sprintId ?? 'active'] as const,
@@ -377,6 +378,14 @@ export function useIntegrationHealth() {
   return useQuery({
     queryKey: dashboardKeys.integrations,
     queryFn: getIntegrationHealth,
+    refetchInterval: 120_000,
+  });
+}
+
+export function useLlmUsage(days = 7) {
+  return useQuery({
+    queryKey: dashboardKeys.llmUsage(days),
+    queryFn: () => getLlmUsage(days),
     refetchInterval: 120_000,
   });
 }

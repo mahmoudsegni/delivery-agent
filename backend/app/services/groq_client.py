@@ -15,6 +15,7 @@ import asyncio
 import json
 import logging
 import random
+import time
 
 import httpx
 
@@ -45,6 +46,37 @@ def _retry_delay(attempt: int, response: httpx.Response | None) -> float:
 
 class GroqError(RuntimeError):
     """Raised when Groq is unconfigured, unreachable, or returns no usable content."""
+
+
+async def _record_usage(
+    feature: str,
+    model: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+    total_tokens: int,
+    latency_ms: int,
+) -> None:
+    """Persist one ledger row. A logging failure must NEVER break the LLM call."""
+    try:
+        # Imported here so the client stays importable without a DB (tests,
+        # CLI tools) — engine creation is lazy anyway.
+        from app.database import async_session_maker
+        from app.models.llm_call import LLMCall
+
+        async with async_session_maker() as session:
+            session.add(
+                LLMCall(
+                    feature=feature,
+                    model=model,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    total_tokens=total_tokens,
+                    latency_ms=latency_ms,
+                )
+            )
+            await session.commit()
+    except Exception:  # ledger is best-effort by design
+        logger.warning("LLM usage ledger write failed", exc_info=True)
 
 
 def extract_json(text: str) -> dict:
@@ -81,16 +113,20 @@ async def groq_chat(
     *,
     temperature: float = 0.4,
     max_tokens: int | None = None,
+    feature: str = "other",
 ) -> str:
     """Send a chat completion to Groq and return the response content.
 
     In DEMO_MODE, replay a pre-recorded response instead (no API key needed).
+    Successful calls (demo included) are logged to the ``llm_calls`` ledger
+    tagged with ``feature``.
 
     Raises :class:`GroqError` on a missing key, transport failure, non-200
     response, or empty content. Transient failures (429/5xx, transport
     errors) are retried up to 2 times with backoff before giving up.
     """
     if settings.demo_mode:
+        await _record_usage(feature, "demo", 0, 0, 0, 0)
         return demo_completion(messages)
 
     if not settings.groq_api_key:
@@ -110,7 +146,9 @@ async def groq_chat(
     # ponytail: fixed 3 attempts, plain loop — circuit breaker only if Groq
     # outages ever make this the bottleneck.
     response: httpx.Response | None = None
+    t0 = time.monotonic()
     for attempt in range(3):
+        t0 = time.monotonic()  # resets per attempt: latency excludes backoff sleeps
         try:
             async with httpx.AsyncClient(timeout=60.0) as client:
                 response = await client.post(
@@ -152,7 +190,17 @@ async def groq_chat(
         raise GroqError(f"Groq API error: {detail}")
 
     assert response is not None  # loop exits only via break-on-200 or raise
-    choice = response.json()["choices"][0]
+    body = response.json()
+    usage = body.get("usage") or {}
+    await _record_usage(
+        feature,
+        payload["model"],
+        usage.get("prompt_tokens", 0),
+        usage.get("completion_tokens", 0),
+        usage.get("total_tokens", 0),
+        round((time.monotonic() - t0) * 1000),
+    )
+    choice = body["choices"][0]
     content = choice["message"].get("content") or ""
     finish_reason = choice.get("finish_reason")
 
@@ -177,6 +225,7 @@ async def groq_json(
     system_prompt: str,
     *,
     temperature: float = 0.3,
+    feature: str = "other",
 ) -> dict:
     """Call Groq for a structured answer and return the parsed JSON object."""
     content = await groq_chat(
@@ -185,6 +234,7 @@ async def groq_json(
             {"role": "user", "content": prompt},
         ],
         temperature=temperature,
+        feature=feature,
     )
     try:
         return extract_json(content)

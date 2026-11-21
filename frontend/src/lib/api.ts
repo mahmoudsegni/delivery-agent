@@ -5,6 +5,7 @@ import type {
   RunEventsResponse, Sprint, SprintCreate, StreamDetail, StreamListItem, Task, TaskCreate, TaskUpdate, TeamMember,
   MemberAbsence,
   CostByStreamResponse, DeliverySummary, FlowMetrics, IntegrationHealth, InvestmentProfileResponse, InvestmentTrendResponse, RoadmapResponse,
+  LlmUsage,
   SprintBurndown, SprintDashboard, SprintForecast, TeamLoadRow, VelocityResponse, WorkforceTrend,
   SearchResults,
 } from '../types';
@@ -337,6 +338,10 @@ export async function getDeliverySummary(days = 14, streamId?: string | null): P
 
 export async function getIntegrationHealth(): Promise<IntegrationHealth> {
   return json<IntegrationHealth>(await apiFetch('/api/v1/dashboard/integrations'));
+}
+
+export async function getLlmUsage(days = 7): Promise<LlmUsage> {
+  return json<LlmUsage>(await apiFetch(`/api/v1/dashboard/llm-usage?days=${days}`));
 }
 
 export async function getCostByStream(days?: number | null): Promise<CostByStreamResponse> {

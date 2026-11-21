@@ -3,7 +3,7 @@ import {
   ChevronRight, Inbox, MessageCircleQuestion, Newspaper, TrendingUp, X,
 } from 'lucide-react';
 import {
-  useCodingStats, useDecisions, useLatestBrief, usePortfolio,
+  useCodingStats, useDecisions, useLatestBrief, useLlmUsage, usePortfolio,
 } from '../../hooks/useApi';
 import { Badge } from '../../ui/Badge';
 import { Button } from '../../ui/Button';
@@ -66,6 +66,7 @@ export function CommandCenter({ onOpenStream, onOpenBriefs, onOpenAsk }: Command
   const { data: portfolio, isPending, error } = usePortfolio();
   const { data: decisions = [] } = useDecisions();
   const { data: stats } = useCodingStats();
+  const { data: usage } = useLlmUsage();
 
   const avgConfidence = portfolio?.avg_confidence ?? null;
   const trend = portfolio?.confidence_trend ?? [];
@@ -126,6 +127,17 @@ export function CommandCenter({ onOpenStream, onOpenBriefs, onOpenAsk }: Command
             </div>
           </div>
         </div>
+
+        {/* LLM spend, straight from the usage ledger. */}
+        {usage && usage.calls > 0 && (
+          <div
+            style={{ fontSize: 12, color: 'var(--ink-mute)', marginTop: 10 }}
+            aria-label="LLM usage"
+          >
+            LLM usage (7d): {usage.calls.toLocaleString()} calls ·{' '}
+            {usage.total_tokens.toLocaleString()} tokens · avg {usage.avg_latency_ms}ms
+          </div>
+        )}
 
         {/* Stream health tiles — click drills into the PM altitude. */}
         <section style={{ marginBottom: 28 }}>

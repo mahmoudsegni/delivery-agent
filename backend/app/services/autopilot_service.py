@@ -159,7 +159,9 @@ class AutopilotService:
         )
 
     async def _triage(self, task: Task) -> dict[str, Any]:
-        return await groq_json(self._triage_prompt(task), _TRIAGE_SYSTEM_PROMPT)
+        return await groq_json(
+            self._triage_prompt(task), _TRIAGE_SYSTEM_PROMPT, feature="autopilot"
+        )
 
     async def _dispatch(
         self, task: Task, repository: str | None, proposal: Proposal | None = None

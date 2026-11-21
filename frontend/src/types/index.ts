@@ -595,6 +595,14 @@ export interface IntegrationHealth {
   snapshot_lag_days: number | null;
 }
 
+export interface LlmUsage {
+  days: number;
+  calls: number;
+  total_tokens: number;
+  avg_latency_ms: number;
+  by_feature: Record<string, { calls: number; total_tokens: number }>;
+}
+
 export interface CostByStream {
   stream_id: string | null;
   stream_name: string;

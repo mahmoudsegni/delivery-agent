@@ -5,10 +5,15 @@ release readiness, team capacity, stored sprint velocity, sync state. See
 ``DashboardService`` for the query rules.
 """
 
+from datetime import datetime, timedelta, timezone
+from typing import Any, Sequence
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.models.llm_call import LLMCall
 from app.schemas.dashboard import (
     CostByStreamResponse,
     DeliverySummary,
@@ -149,6 +154,48 @@ async def get_flow(
 ) -> FlowMetrics:
     """Throughput, cycle time, lead time and aging WIP from the event log."""
     return await DashboardService(db).flow_metrics(days, stream_id)
+
+
+@router.get("/llm-usage")
+async def get_llm_usage(
+    days: int = Query(7, ge=1, le=90),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """LLM ledger totals for the Command Center tile."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    # ponytail: fetch window rows, aggregate in Python — SQL GROUP BY if the
+    # ledger ever grows past a few hundred rows per week.
+    rows = (
+        (await db.execute(select(LLMCall).where(LLMCall.created_at >= cutoff)))
+        .scalars()
+        .all()
+    )
+    return summarize_usage(rows, days)
+
+
+def summarize_usage(rows: Sequence[Any], days: int) -> dict:
+    """Pure aggregate over ledger rows, keeping only the last ``days`` days."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    calls = 0
+    total_tokens = 0
+    latency_sum = 0
+    by_feature: dict[str, dict[str, int]] = {}
+    for r in rows:
+        if r.created_at < cutoff:  # created_at is timezone-aware (DateTime(timezone=True))
+            continue
+        calls += 1
+        total_tokens += r.total_tokens
+        latency_sum += r.latency_ms
+        f = by_feature.setdefault(r.feature, {"calls": 0, "total_tokens": 0})
+        f["calls"] += 1
+        f["total_tokens"] += r.total_tokens
+    return {
+        "days": days,
+        "calls": calls,
+        "total_tokens": total_tokens,
+        "avg_latency_ms": round(latency_sum / calls) if calls else 0,
+        "by_feature": by_feature,
+    }
 
 
 @router.get("/roadmap", response_model=RoadmapResponse)

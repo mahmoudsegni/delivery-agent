@@ -15,6 +15,7 @@ from app.models.sync_state import SyncState
 from app.models.task import Task
 from app.models.task_status_event import TaskStatusEvent
 from app.models.member_absence import MemberAbsence
+from app.models.llm_call import LLMCall
 from app.models.team import TeamMember
 
 __all__ = [
@@ -26,6 +27,7 @@ __all__ = [
     "Brief",
     "ConfidenceSnapshot",
     "Feature",
+    "LLMCall",
     "MemberAbsence",
     "Proposal",
     "Sprint",
