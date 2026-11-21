@@ -1868,6 +1868,9 @@ button.capacity-days-off:hover { border-color: var(--accent); color: var(--ink);
    already used elsewhere in this stylesheet.
    ============================================================ */
 .swx { position: relative; margin: 0 16px 12px; }
+/* Sits right under the sprint switcher; plain anchor so the browser streams
+   the download (cookie auth + Vite /api proxy apply automatically). */
+.sidebar-export { display: flex; justify-content: center; margin: 0 16px 12px; }
 
 /* ---- trigger: three lines of context, not one name ---- */
 .swx-trigger {

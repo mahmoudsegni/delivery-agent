@@ -74,6 +74,15 @@ export function Sidebar({
         <NotificationBell />
       </div>
       <SprintSwitcher sprintId={sprintId} onSelectSprint={onSelectSprint} />
+      {sprintId && (
+        <a
+          className="btn btn-secondary sidebar-export"
+          href={`/api/v1/sprints/${sprintId}/export.csv`}
+          download
+        >
+          Export CSV
+        </a>
+      )}
 
       <nav className="sidebar-nav" aria-label="Primary">
         {/* Executive altitude — the default landing for top management. */}

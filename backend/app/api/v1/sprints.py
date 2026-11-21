@@ -1,9 +1,11 @@
 """Sprint API endpoints."""
 
+import csv
+import io
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.agent import ProposalResponse
@@ -298,3 +300,59 @@ async def get_sprint_burndown(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Sprint not found: {sprint_id}",
         )
+
+
+@router.get("/{sprint_id}/export.csv")
+async def export_sprint_csv(
+    sprint_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Download the sprint's work items as CSV (spreadsheet-friendly).
+
+    Header and row order must stay in sync — pinned by test_export_csv.
+    """
+    service = SprintService(db)
+    try:
+        tasks = await service.get_sprint_tasks(sprint_id)
+    except SprintNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Sprint not found: {sprint_id}",
+        )
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(
+        [
+            "external_id",
+            "title",
+            "work_item_type",
+            "status",
+            "assignee",
+            "story_points",
+            "estimated_hours",
+            "priority",
+            "technology",
+        ]
+    )
+    for t in tasks:
+        writer.writerow(
+            [
+                t.external_id,
+                t.title,
+                t.work_item_type,
+                t.status,
+                t.assignee.name if t.assignee else "",
+                t.story_points,
+                t.estimated_hours,
+                t.priority,
+                t.technology,
+            ]
+        )
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f'attachment; filename="sprint-{sprint_id}.csv"'
+        },
+    )

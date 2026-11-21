@@ -8,6 +8,7 @@ from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.proposal import Proposal
 from app.models.sprint import Sprint
@@ -221,7 +222,11 @@ class SprintService:
         """Get all tasks in a sprint."""
         await self.get_sprint(sprint_id)  # Verify sprint exists
 
-        query = select(Task).where(Task.sprint_id == str(sprint_id))
+        query = (
+            select(Task)
+            .where(Task.sprint_id == str(sprint_id))
+            .options(selectinload(Task.assignee))
+        )
 
         if status:
             query = query.where(Task.status == status)
