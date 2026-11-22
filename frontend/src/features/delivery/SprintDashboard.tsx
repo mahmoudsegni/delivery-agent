@@ -4,6 +4,7 @@ import {
   useBurndown, useForecast, useSnapshotSprint, useSprintDashboard, useSprints, useVelocity,
 } from '../../hooks/useApi';
 import { BarChart, Legend, LineChart, Meter, HBars, shortDate } from '../../ui/charts';
+import { withProjection } from '../../lib/burndownGuides';
 import { Badge } from '../../ui/Badge';
 import { Button } from '../../ui/Button';
 import { EmptyState } from '../../ui/EmptyState';
@@ -46,21 +47,45 @@ export function SprintDashboard({ sprintId, onSelectSprint }: Props) {
   const [showAll, setShowAll] = useState(false);
 
   const burndownSeries = useMemo(() => {
-    const pts = burndown?.data_points ?? [];
-    return [
+    // The forecast only becomes geometry when the Monte-Carlo run had real
+    // numbers — insufficient history or "done" stays a caption.
+    const p50 =
+      forecast && !forecast.done && forecast.sufficient_history !== false
+        ? (forecast.p50_days ?? null)
+        : null;
+    const g = withProjection(
+      (burndown?.data_points ?? []).map((p) => ({
+        date: p.date,
+        ideal: p.ideal_points,
+        remaining: p.remaining_points,
+      })),
+      new Date().toISOString().slice(0, 10),
+      p50,
+    );
+    const series = [
       {
         name: 'Ideal',
         color: 'var(--chart-ref)',
         dashed: true,
-        points: pts.map((p) => ({ date: p.date, value: p.ideal_points })),
+        points: g.dates.map((date, i) => ({ date, value: g.ideal[i] })),
       },
       {
         name: 'Actual',
         color: 'var(--chart-1)',
-        points: pts.map((p) => ({ date: p.date, value: p.remaining_points })),
+        points: g.dates.map((date, i) => ({ date, value: g.actual[i] })),
       },
     ];
-  }, [burndown]);
+    const hasProjection = g.projection.some((v) => v != null);
+    if (hasProjection) {
+      series.push({
+        name: 'p50 forecast',
+        color: 'var(--chart-2)',
+        dashed: true,
+        points: g.dates.map((date, i) => ({ date, value: g.projection[i] })),
+      });
+    }
+    return { series, hasProjection };
+  }, [burndown, forecast]);
 
   // How much real history exists — an honest caption beats a confident-looking
   // line drawn over days we never measured.
@@ -202,10 +227,13 @@ export function SprintDashboard({ sprintId, onSelectSprint }: Props) {
             entries={[
               { name: 'Ideal', color: 'var(--chart-ref)', dashed: true },
               { name: 'Actual', color: 'var(--chart-1)' },
+              ...(burndownSeries.hasProjection
+                ? [{ name: 'p50 forecast', color: 'var(--chart-2)', dashed: true }]
+                : []),
             ]}
           />
           <LineChart
-            series={burndownSeries}
+            series={burndownSeries.series}
             height={230}
             area
             valueFmt={(v) => `${Math.round(v)} ${burnUnit}`}
