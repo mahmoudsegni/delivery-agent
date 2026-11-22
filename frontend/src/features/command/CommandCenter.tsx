@@ -5,6 +5,7 @@ import {
 import {
   useCodingStats, useDecisions, useLatestBrief, useLlmUsage, usePortfolio,
 } from '../../hooks/useApi';
+import { formatTokens, topFeatures } from '../../lib/llmUsage';
 import { Badge } from '../../ui/Badge';
 import { Button } from '../../ui/Button';
 import { EmptyState } from '../../ui/EmptyState';
@@ -136,6 +137,14 @@ export function CommandCenter({ onOpenStream, onOpenBriefs, onOpenAsk }: Command
           >
             LLM usage (7d): {usage.calls.toLocaleString()} calls ·{' '}
             {usage.total_tokens.toLocaleString()} tokens · avg {usage.avg_latency_ms}ms
+            {Object.keys(usage.by_feature).length > 0 && (
+              <>
+                {' '}—{' '}
+                {topFeatures(usage.by_feature)
+                  .map((f) => `${f.feature} ${formatTokens(f.tokens)}`)
+                  .join(' · ')}
+              </>
+            )}
           </div>
         )}
 
