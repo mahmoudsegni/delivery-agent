@@ -1,7 +1,11 @@
 """API v1 router aggregating all endpoints."""
 
-from fastapi import APIRouter, Form, Request
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1 import agent, ws
 from app.api.v1.autopilot import router as autopilot_router
@@ -18,6 +22,7 @@ from app.api.v1.streams import router as streams_router
 from app.api.v1.tasks import router as tasks_router
 from app.api.v1.team import router as team_router
 from app.config import settings
+from app.database import get_db
 from app.dependencies import (
     PASSCODE_COOKIE,
     clear_passcode_failures,
@@ -25,6 +30,7 @@ from app.dependencies import (
     passcode_ok,
     register_passcode_failure,
 )
+from app.models.sync_state import SyncState
 
 router = APIRouter()
 
@@ -47,13 +53,40 @@ router.include_router(ws.router)
 
 
 @router.get("/health")
-async def health_check() -> dict:
+async def health_check(db: AsyncSession = Depends(get_db)):
     """
-    Health check endpoint.
+    Health check for monitoring, load balancers and compose healthchecks.
 
-    Returns the service status and version for monitoring and load balancer checks.
+    200 only when the database answers; sync freshness is reported, never
+    gated on (sync cadence is deployment-specific).
     """
-    return {"status": "ok", "version": "0.1.0"}
+    try:
+        await db.execute(text("SELECT 1"))
+    except Exception as e:
+        return JSONResponse(
+            {"status": "degraded", "db": "unreachable", "detail": str(e)[:200]},
+            status_code=503,
+        )
+    row = (
+        await db.execute(
+            select(SyncState).order_by(SyncState.last_sync_at.desc()).limit(1)
+        )
+    ).scalar_one_or_none()
+    sync = None
+    if row is not None and row.last_sync_at is not None:
+        ts = row.last_sync_at
+        if ts.tzinfo is None:  # naive timestamps (SQLite/demo) are UTC
+            ts = ts.replace(tzinfo=timezone.utc)
+        sync = {
+            "provider": row.provider,
+            "last_sync_at": ts.isoformat(),
+            "age_hours": round(
+                (datetime.now(timezone.utc) - ts).total_seconds() / 3600, 1
+            ),
+            "last_status": row.last_status,
+            "last_error": row.last_error,
+        }
+    return {"status": "ok", "db": "ok", "sync": sync}
 
 
 # --- Optional passcode gate (issue #8) -------------------------------------

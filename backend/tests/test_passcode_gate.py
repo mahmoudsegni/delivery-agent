@@ -6,6 +6,8 @@ touch the database (docs, health, the passcode page itself). The gate is
 toggled by flipping settings.passcode, restored in finally.
 """
 
+from types import SimpleNamespace
+
 import pytest
 from collections import deque
 from datetime import datetime, timedelta
@@ -13,6 +15,7 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from app.config import settings
+from app.database import get_db
 from app.dependencies import PASSCODE_COOKIE, _FAILS, passcode_locked, register_passcode_failure
 from app.main import app
 
@@ -30,6 +33,23 @@ def clean_limiter():
     _FAILS.clear()
     yield
     _FAILS.clear()
+
+
+# /api/v1/health now probes the DB (issue #39); the suite stays DB-free by
+# overriding get_db with a fake whose queries always succeed (no sync rows).
+class _HealthDB:
+    async def execute(self, query):
+        return SimpleNamespace(scalar_one_or_none=lambda: None)
+
+
+@pytest.fixture(autouse=True)
+def fake_health_db():
+    async def _override():
+        yield _HealthDB()
+
+    app.dependency_overrides[get_db] = _override
+    yield
+    app.dependency_overrides.clear()
 
 
 def test_gate_off_by_default_is_invisible(client):
