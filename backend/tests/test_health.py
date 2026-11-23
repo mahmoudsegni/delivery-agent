@@ -6,7 +6,6 @@ SyncState lookup), so the 200/503 contract is what gets asserted.
 """
 
 from datetime import datetime, timedelta, timezone
-from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 

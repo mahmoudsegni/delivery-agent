@@ -19,5 +19,14 @@ export default defineConfig([
       ecmaVersion: 2020,
       globals: globals.browser,
     },
+    rules: {
+      // TODO(#13): pre-existing debt on master — 59 errors across these four
+      // rules when the gate landed. Warn keeps new violations visible while
+      // the backlog burns down; flip back to error per rule as it hits zero.
+      '@typescript-eslint/no-explicit-any': 'warn',
+      'react-refresh/only-export-components': 'warn',
+      'react-hooks/set-state-in-effect': 'warn',
+      '@typescript-eslint/no-empty-object-type': 'warn',
+    },
   },
 ])

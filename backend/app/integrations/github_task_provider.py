@@ -129,7 +129,7 @@ class GitHubTaskProvider(TaskProvider):
     # -- mapping ----------------------------------------------------------
 
     def _map_issue(self, issue: dict) -> ExternalTask:
-        labels = [l["name"].strip().lower() for l in issue.get("labels", [])]
+        labels = [lab["name"].strip().lower() for lab in issue.get("labels", [])]
         status: Literal["backlog", "todo", "in_progress", "review", "done"] = "todo"
         for label, mapped in _STATUS_LABELS:
             if label in labels:
@@ -285,7 +285,7 @@ class GitHubTaskProvider(TaskProvider):
             json={
                 "title": task.title,
                 "body": body or None,
-                "labels": [l for l in labels if l],
+                "labels": [lab for lab in labels if lab],
                 "assignees": [task.assignee_name] if task.assignee_name else [],
             },
         )
@@ -311,15 +311,15 @@ class GitHubTaskProvider(TaskProvider):
         # Labels carry priority/estimate/status. Recompute from current labels
         # so we never clobber unrelated ones (type:, area:, user-added...).
         if any(f is not None for f in (changes.status, changes.priority, changes.estimated_hours)):
-            current_labels = [l for l in (current.tags or "").split(",") if l]
-            strip = {l for l, _ in _STATUS_LABELS} | {l for l, _ in _PRIORITY_LABELS}
-            keep = [l for l in current_labels if not l.startswith("estimate:")]
-            keep = [l for l in keep if l not in strip]
+            current_labels = [lab for lab in (current.tags or "").split(",") if lab]
+            strip = {lab for lab, _ in _STATUS_LABELS} | {lab for lab, _ in _PRIORITY_LABELS}
+            keep = [lab for lab in current_labels if not lab.startswith("estimate:")]
+            keep = [lab for lab in keep if lab not in strip]
             if changes.status is not None:
                 payload["state"] = "closed" if changes.status == "done" else "open"
                 keep += self._labels_for_status(changes.status)
             else:
-                keep += [l for l in current_labels if l in {m for m, _ in _STATUS_LABELS} or l == "board:backlog"]
+                keep += [lab for lab in current_labels if lab in {m for m, _ in _STATUS_LABELS} or lab == "board:backlog"]
             keep.append(f"priority:{changes.priority if changes.priority else current.priority}")
             hours = changes.estimated_hours if changes.estimated_hours is not None else current.estimated_hours
             if hours:

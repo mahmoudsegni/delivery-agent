@@ -130,7 +130,6 @@ def test_url_must_be_absolute():
 
 
 def test_write_side():
-    import asyncio
     import httpx
 
     from app.integrations.jira_task_provider import _pick_transition, _text_doc

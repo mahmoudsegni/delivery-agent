@@ -89,8 +89,8 @@ def test_update_status_recomputes_labels_without_clobbering():
     # Reproduce update_task's label math directly (network-free).
     strip = {"board:backlog", "board:in-progress", "board:review",
              "priority:low", "priority:medium", "priority:high", "priority:critical"}
-    keep = [l for l in (current.tags or "").split(",") if l]
-    keep = [l for l in keep if not l.startswith("estimate:") and l not in strip]
+    keep = [lab for lab in (current.tags or "").split(",") if lab]
+    keep = [lab for lab in keep if not lab.startswith("estimate:") and lab not in strip]
     keep += P._labels_for_status(changes.status)
     keep.append(f"priority:{changes.priority}")
     hours = current.estimated_hours

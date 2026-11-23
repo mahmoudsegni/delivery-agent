@@ -64,6 +64,11 @@ testpaths = ["tests"]
 line-length = 100
 target-version = "py311"
 
+[tool.ruff.lint]
+# Canonical starter set, pinned in-file so local runs match CI and never
+# drift with ruff default rule changes. Widen deliberately, not by accident.
+select = ["E4", "E7", "E9", "F"]
+
 [tool.mypy]
 python_version = "3.11"
 strict = true

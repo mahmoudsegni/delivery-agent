@@ -7,7 +7,6 @@ They are designed to be injected into the Deep Agent at runtime.
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -51,7 +50,7 @@ class DatabaseTools:
         """
         # Get all available team members
         result = await self.db.execute(
-            select(TeamMember).where(TeamMember.is_available == True)
+            select(TeamMember).where(TeamMember.is_available.is_(True))
         )
         members = list(result.scalars().all())
 

@@ -182,7 +182,6 @@ class CodingRunService:
 
     async def do_poll_ci(self, run: AgentRun) -> str:
         """Returns 'success' | 'failed' | 'running'. Sets run.status accordingly."""
-        spec = AgentSpec(**(run.spec or {}))
         status = await self.agent.get_ci_status(
             run.pr_id or "", run.branch_name or "", run.ci_poll_count, repo=run.repository
         )

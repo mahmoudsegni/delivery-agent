@@ -223,6 +223,6 @@ async def merge_run(run_id: str, db: AsyncSession = Depends(get_db)) -> dict[str
 async def revise_run(
     run_id: str, req: ReviseRequest, db: AsyncSession = Depends(get_db)
 ) -> dict[str, Any]:
-    run = await _load(db, run_id)
+    await _load(db, run_id)  # 404 check only; Celery task re-loads it
     revise_coding_run.delay(run_id, req.comment)
     return {"run_id": run_id, "status": "revising"}

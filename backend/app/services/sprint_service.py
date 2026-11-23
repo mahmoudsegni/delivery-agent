@@ -3,7 +3,6 @@
 import json
 import logging
 from datetime import date, timedelta
-from typing import Any
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -14,7 +13,6 @@ from app.models.proposal import Proposal
 from app.models.sprint import Sprint
 from app.models.task import Task
 from app.schemas.sprint import (
-    BurndownDataPoint,
     SprintBurndown,
     SprintCreate,
     SprintUpdate,

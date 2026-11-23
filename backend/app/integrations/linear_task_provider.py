@@ -267,7 +267,7 @@ class LinearTaskProvider(TaskProvider):
             external_state=(node.get("state") or {}).get("name"),
             state_changed_at=None,  # history needs a second query; not worth it
             external_changed_at=_parse_iso(node.get("updatedAt")),
-            tags=",".join(l["name"] for l in (node.get("labels") or {}).get("nodes") or [])
+            tags=",".join(lab["name"] for lab in (node.get("labels") or {}).get("nodes") or [])
             or None,
         )
 

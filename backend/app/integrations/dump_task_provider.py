@@ -17,6 +17,15 @@ import os
 
 from datetime import date, datetime
 
+from app.integrations.tfs_task_provider import (
+    DEFAULT_SYNC_TYPES,
+    EXCLUDED_STATES,
+    F_AREA,
+    F_STATE,
+    F_TYPE,
+    TFSTaskProvider,
+)
+
 from app.integrations.task_provider import (
     ExternalSprint,
     ExternalTask,
@@ -37,14 +46,6 @@ def _as_date(value: str | None) -> date | None:
         return datetime.fromisoformat(value.replace("Z", "+00:00")).date()
     except ValueError:
         return None
-from app.integrations.tfs_task_provider import (
-    DEFAULT_SYNC_TYPES,
-    EXCLUDED_STATES,
-    F_AREA,
-    F_STATE,
-    F_TYPE,
-    TFSTaskProvider,
-)
 
 logger = logging.getLogger(__name__)
 
