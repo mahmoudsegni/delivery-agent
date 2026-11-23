@@ -152,10 +152,28 @@ Adding one is implementing 5 async methods + 2 optional ones; `github_task_provi
 (~300 lines) is the reference. All providers honor `PUSH_ENABLED=false` as a hard
 write-refusal at the provider level.
 
+### MCP server
+
+The backend exposes a read-only [Model Context Protocol](https://modelcontextprotocol.io)
+endpoint at `POST /mcp` (Streamable HTTP) — ask Claude, Cursor or any MCP client
+about the sprint instead of opening the dashboard:
+
+```
+claude mcp add --transport http delivery-agent http://localhost:8000/mcp
+```
+
+Four tools, all thin reads over the same services the REST API uses:
+`delivery_snapshot` (stream health, confidence trend, active sprint, latest
+standup, pending proposals — one call), `backlog`, `sprints`, and `forecast`
+(Monte Carlo completion odds). No writes, no LLM key needed. On deployments
+with `PASSCODE` set, MCP is gated off until token auth lands — run without a
+passcode (local/self-host) to use it.
+
 ## Roadmap
 
 - [x] GitHub Issues provider (dogfooded on this repo's own issues)
 - [x] Jira + Linear providers (see Integrations above)
+- [x] Read-only MCP server at `/mcp` (Claude/Cursor: snapshot, backlog, sprints, forecast)
 - [ ] Slack adapter alongside Telegram
 - [ ] Demo mode with pre-recorded agent sessions (no LLM key needed)
 - [ ] Self-host quickscript + Helm chart

@@ -39,6 +39,9 @@ dependencies = [
     # HTTP client
     "httpx>=0.26.0",
 
+    # MCP server (read-only tools for Claude/Cursor, #16)
+    "mcp>=2.3.0",
+
     # Utilities
     "python-dotenv>=1.0.0",
     "structlog>=24.1.0",

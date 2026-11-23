@@ -18,6 +18,7 @@ from app.dependencies import (
     passcode_ok,
     register_passcode_failure,
 )
+from app import mcp_server  # module: mcp_server.server / mcp_server.http_app
 
 
 @asynccontextmanager
@@ -28,7 +29,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     Manages startup and shutdown events, including database engine cleanup.
     """
     # Startup
-    yield
+    async with mcp_server.server.session_manager.run():
+        yield
     # Shutdown
     await async_engine.dispose()
 
@@ -60,6 +62,15 @@ app.add_middleware(
 
 # Include API v1 router
 app.include_router(v1_router, prefix="/api/v1")
+
+# Read-only MCP endpoint for Claude/Cursor (#16): POST /mcp.
+# Mounted at "/" AFTER all API routes, with the transport's own path at
+# "/mcp" — the exact URL MCP clients expect, no redirect dance.
+# ponytail: no MCP auth story yet — the passcode gate above covers /mcp on
+# exposed deployments (MCP clients can't do the cookie unlock), so MCP works
+# where PASSCODE is unset (local/self-host). Add token auth if it needs to
+# go public.
+app.mount("/", mcp_server.http_app)
 
 
 # Optional passcode gate for exposed deployments (issue #8). Off unless
