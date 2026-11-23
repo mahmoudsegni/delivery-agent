@@ -9,6 +9,7 @@ Responsibilities:
 - ``/confidence``    -> portfolio confidence + active sprint bands (linked chats only).
 - ``/blockers``      -> deterministic stuck-work report from the heuristic detector (linked chats only).
 - ``/team``          -> per-member capacity vs assigned hours for the active sprint (linked chats only).
+- ``/usage``         -> LLM token spend for the last 7 days, from the ledger (linked chats only).
 - ``/skip [reason]`` -> mark yourself out of the open standup round (no nudges, not missing).
 - ``/help``          -> list commands.
 - plain text          -> answer to the current standup question.
@@ -19,13 +20,16 @@ is just the transport loop + routing.
 
 import asyncio
 import logging
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 
+from app.api.v1.dashboard import summarize_usage
 from app.config import settings
 from app.integrations import standup_state
 from app.integrations.telegram_client import TelegramClient
 from app.models.confidence import ConfidenceSnapshot
+from app.models.llm_call import LLMCall
 from app.models.sprint import Sprint
 from app.schemas.dashboard import TeamLoadRow
 from app.services.agent_analysis_service import AgentAnalysisService
@@ -49,6 +53,7 @@ _HELP_TEXT = (
     "/confidence — portfolio confidence at a glance\n"
     "/blockers — what's stuck right now (no LLM needed)\n"
     "/team — capacity vs assigned load this sprint (no LLM needed)\n"
+    "/usage — LLM spend, last 7 days\n"
     "/skip <reason> — mark yourself out of today's standup\n"
     "/ask <question> — free-text Q&A over the live snapshot (remembers the last few turns)\n"
     "/reset — clear /ask conversation memory\n"
@@ -143,6 +148,47 @@ def _render_team(rows: list[TeamLoadRow]) -> str:
     return "\n".join([f"👥 Team load — {over} over capacity"] + lines)[:4000]
 
 
+_USAGE_DAYS = 7
+
+
+async def _fetch_llm_usage(session) -> dict:
+    """7-day LLM ledger summary via the shared dashboard aggregator."""
+    rows = (
+        await session.execute(
+            select(LLMCall).where(
+                LLMCall.created_at
+                >= datetime.now(timezone.utc) - timedelta(days=_USAGE_DAYS)
+            )
+        )
+    ).scalars().all()
+    return summarize_usage(rows, _USAGE_DAYS)
+
+
+def _format_tokens(n: int) -> str:
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:.1f}M"
+    if n >= 1_000:
+        return f"{n / 1_000:.1f}k"
+    return str(n)
+
+
+def _render_usage(payload: dict) -> str:
+    if not payload["calls"]:
+        return "No LLM calls logged in the last 7 days."
+    top = sorted(
+        payload["by_feature"].items(),
+        key=lambda kv: (-kv[1]["total_tokens"], kv[0]),  # tokens desc, name asc for determinism
+    )[:3]
+    tops = " · ".join(
+        f"{name} {_format_tokens(stats['total_tokens'])}" for name, stats in top
+    )
+    return (
+        f"LLM usage (7d): {payload['calls']} calls"
+        f" · {payload['total_tokens']:,} tokens"
+        f" · avg {payload['avg_latency_ms']}ms\ntop: {tops}"
+    )
+
+
 async def handle_update(update: dict, client: TelegramClient) -> None:
     """Route a single Telegram update."""
     message = update.get("message")
@@ -214,6 +260,11 @@ async def handle_update(update: dict, client: TelegramClient) -> None:
                         if rows is None
                         else _render_team(rows)
                     )
+            elif command == "/usage":
+                if await service.member_for_chat(chat_id) is None:
+                    reply = _LINK_HINT
+                else:
+                    reply = _render_usage(await _fetch_llm_usage(session))
             elif command == "/skip":
                 if await service.member_for_chat(chat_id) is None:
                     reply = _LINK_HINT

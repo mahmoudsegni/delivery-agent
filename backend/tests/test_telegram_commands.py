@@ -5,7 +5,7 @@ and the two DB touches (``member_for_chat`` / ``BriefService.latest``) are
 stubbed at class level. Rendering runs for real on an in-memory Brief.
 """
 
-from datetime import date
+from datetime import date, datetime, timezone
 import json
 
 from app.integrations import standup_state
@@ -13,6 +13,7 @@ from app.integrations import telegram_bot
 from app.integrations.telegram_bot import handle_update
 from app.models.brief import Brief
 from app.models.confidence import ConfidenceSnapshot
+from app.models.llm_call import LLMCall
 from app.models.sprint import Sprint
 from app.models.standup import StandupEntry, StandupRound
 from app.schemas.dashboard import TeamLoadRow
@@ -33,8 +34,11 @@ class FakeClient:
 
 
 class _FakeSessionCtx:
+    def __init__(self, session=None):
+        self.session = object() if session is None else session
+
     async def __aenter__(self):
-        return object()
+        return self.session
 
     async def __aexit__(self, *exc):
         return False
@@ -73,8 +77,10 @@ def _brief() -> Brief:
     )
 
 
-async def _run(monkeypatch, text, *, member=True, brief=True):
-    monkeypatch.setattr(telegram_bot, "create_task_session", _FakeSessionCtx)
+async def _run(monkeypatch, text, *, member=True, brief=True, session=None):
+    monkeypatch.setattr(
+        telegram_bot, "create_task_session", lambda: _FakeSessionCtx(session)
+    )
     monkeypatch.setattr(
         StandupService, "member_for_chat", lambda self, chat_id: _async(_member() if member else None)
     )
@@ -564,6 +570,94 @@ async def test_team_unlinked_chat(monkeypatch):
 async def test_help_lists_team(monkeypatch):
     client, _ = await _run(monkeypatch, "/help")
     assert "/team" in client.sent[0][1]
+
+
+# ------------------------------------------------------------------
+# /usage (issue #45)
+# ------------------------------------------------------------------
+
+
+class _ScalarRows:
+    """execute() result stub: ``.scalars().all()`` like SQLAlchemy."""
+
+    def __init__(self, rows):
+        self.rows = rows
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        return self.rows
+
+
+class _UsageSession:
+    def __init__(self, rows):
+        self.rows = rows
+
+    async def execute(self, query):
+        return _ScalarRows(self.rows)
+
+
+def _call(feature: str, total_tokens: int, latency_ms: int) -> LLMCall:
+    return LLMCall(
+        feature=feature,
+        model="llama-3",
+        prompt_tokens=total_tokens // 2,
+        completion_tokens=total_tokens - total_tokens // 2,
+        total_tokens=total_tokens,
+        latency_ms=latency_ms,
+        created_at=datetime.now(timezone.utc),
+    )
+
+
+async def _run_usage(monkeypatch, *, member=True, rows=None):
+    session = _UsageSession(rows or [])
+    return await _run(monkeypatch, "/usage", member=member, session=session)
+
+
+async def test_usage_happy_path(monkeypatch):
+    rows = [
+        _call("brief", 8_200, 300),
+        _call("ask", 3_100, 500),
+        _call("ask", 60, 100),
+    ]
+    client, recorded = await _run_usage(monkeypatch, rows=rows)
+    assert not recorded
+    reply = client.sent[0][1]
+    assert "LLM usage (7d): 3 calls · 11,360 tokens · avg 300ms" in reply
+    assert "top: brief 8.2k · ask 3.2k" in reply
+    assert len(reply) < 4096
+
+
+async def test_usage_empty_ledger(monkeypatch):
+    client, _ = await _run_usage(monkeypatch, rows=[])
+    assert client.sent[0][1] == "No LLM calls logged in the last 7 days."
+
+
+async def test_usage_unlinked_chat(monkeypatch):
+    client, _ = await _run_usage(monkeypatch, member=False)
+    assert "/start <code>" in client.sent[0][1]
+
+
+def test_usage_token_formats_and_tiebreak():
+    reply = telegram_bot._render_usage(
+        {
+            "calls": 3,
+            "total_tokens": 1_500_999,
+            "avg_latency_ms": 10,
+            "by_feature": {
+                "big": {"calls": 1, "total_tokens": 1_500_000},
+                "beta": {"calls": 1, "total_tokens": 999},
+                "alpha": {"calls": 1, "total_tokens": 999},
+            },
+        }
+    )
+    assert "top: big 1.5M · alpha 999 · beta 999" in reply
+
+
+async def test_help_lists_usage(monkeypatch):
+    client, _ = await _run(monkeypatch, "/help")
+    assert "/usage" in client.sent[0][1]
 
 
 async def test_plain_text_still_records_answer(monkeypatch):
