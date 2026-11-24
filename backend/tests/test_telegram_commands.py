@@ -20,6 +20,7 @@ from app.schemas.dashboard import TeamLoadRow
 from app.services.agent_analysis_service import AgentAnalysisService
 from app.services.ask_service import AskService
 from app.services.brief_service import BriefService
+from app.services.sprint_service import SprintNotFoundError
 from app.services.standup_service import AnswerResult, StandupService
 from app.models.team import TeamMember
 
@@ -658,6 +659,85 @@ def test_usage_token_formats_and_tiebreak():
 async def test_help_lists_usage(monkeypatch):
     client, _ = await _run(monkeypatch, "/help")
     assert "/usage" in client.sent[0][1]
+
+
+# ------------------------------------------------------------------
+# /forecast (issue #23)
+# ------------------------------------------------------------------
+
+
+def _active_sprint() -> Sprint:
+    return Sprint(
+        name="Sprint 2404",
+        start_date=date(2026, 11, 2),
+        end_date=date(2026, 11, 27),
+    )
+
+
+_FORECAST_PAYLOAD = {
+    "p50_days": 7,
+    "p85_days": 14,
+    "on_time_probability": 0.62,
+    "iterations": 1000,
+    "unit": "points",
+    "remaining": 18,
+    "weekly_throughput": [10, 12, 8, 14, 9, 11],
+}
+
+
+async def _run_forecast(
+    monkeypatch, payload, *, member=True, sprint: Sprint | None = _active_sprint(), gone=False
+):
+    async def _forecast(db, sprint_id):
+        if gone:
+            raise SprintNotFoundError(sprint_id)
+        return payload
+
+    monkeypatch.setattr(telegram_bot, "forecast", _forecast)
+    session = _ScriptedSession([sprint])  # execute() wraps each result in _Rows
+    return await _run(monkeypatch, "/forecast", member=member, session=session)
+
+
+async def test_forecast_renders_percentiles_and_odds(monkeypatch):
+    client, recorded = await _run_forecast(monkeypatch, _FORECAST_PAYLOAD)
+    assert not recorded
+    reply = client.sent[0][1]
+    assert "Sprint 2404" in reply and "2026-11-27" in reply
+    assert "p50 7d" in reply and "p85 14d" in reply and "62%" in reply
+    assert "18 points left" in reply
+    assert len(reply) < 4096
+
+
+async def test_forecast_done(monkeypatch):
+    client, _ = await _run_forecast(monkeypatch, {"done": True})
+    assert "Sprint 2404 is already done." in client.sent[0][1]
+
+
+async def test_forecast_insufficient_history(monkeypatch):
+    client, _ = await _run_forecast(
+        monkeypatch, {"sufficient_history": False, "weekly_throughput": [0, 3, 0, 0, 0, 0]}
+    )
+    assert "Not enough throughput history" in client.sent[0][1]
+
+
+async def test_forecast_no_active_sprint(monkeypatch):
+    client, _ = await _run_forecast(monkeypatch, _FORECAST_PAYLOAD, sprint=None)
+    assert client.sent[0][1] == "No active sprint to forecast."
+
+
+async def test_forecast_sprint_vanished(monkeypatch):
+    client, _ = await _run_forecast(monkeypatch, _FORECAST_PAYLOAD, gone=True)
+    assert client.sent[0][1] == "Sprint vanished."
+
+
+async def test_forecast_unlinked_chat(monkeypatch):
+    client, _ = await _run_forecast(monkeypatch, _FORECAST_PAYLOAD, member=False)
+    assert "/start <code>" in client.sent[0][1]
+
+
+async def test_help_lists_forecast(monkeypatch):
+    client, _ = await _run(monkeypatch, "/help")
+    assert "/forecast" in client.sent[0][1]
 
 
 async def test_plain_text_still_records_answer(monkeypatch):

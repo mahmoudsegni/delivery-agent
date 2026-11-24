@@ -7,6 +7,7 @@ Responsibilities:
 - ``/start <code>``  -> link a Telegram account to a TeamMember.
 - ``/status``        -> reply with the latest morning brief (linked chats only).
 - ``/confidence``    -> portfolio confidence + active sprint bands (linked chats only).
+- ``/forecast``     -> Monte Carlo completion odds for the active sprint (linked chats only).
 - ``/blockers``      -> deterministic stuck-work report from the heuristic detector (linked chats only).
 - ``/team``          -> per-member capacity vs assigned hours for the active sprint (linked chats only).
 - ``/usage``         -> LLM token spend for the last 7 days, from the ledger (linked chats only).
@@ -37,6 +38,8 @@ from app.services.ask_service import AskService
 from app.services.brief_service import BriefService
 from app.services.confidence_service import ConfidenceService
 from app.services.dashboard_service import DashboardService
+from app.services.forecast_service import forecast
+from app.services.sprint_service import SprintNotFoundError
 from app.services.standup_service import StandupService
 from app.tasks.db import create_task_session
 
@@ -51,6 +54,7 @@ _HELP_TEXT = (
     "/start <code> — link this chat to your account\n"
     "/status — the latest morning brief\n"
     "/confidence — portfolio confidence at a glance\n"
+    "/forecast — will the active sprint finish on time?\n"
     "/blockers — what's stuck right now (no LLM needed)\n"
     "/team — capacity vs assigned load this sprint (no LLM needed)\n"
     "/usage — LLM spend, last 7 days\n"
@@ -189,6 +193,20 @@ def _render_usage(payload: dict) -> str:
     )
 
 
+def _render_forecast(sprint: Sprint, payload: dict) -> str:
+    """One compact block from the forecast payload (see forecast_service)."""
+    if payload.get("done"):
+        return f"Sprint {sprint.name} is already done."
+    if not payload.get("sufficient_history", True):
+        return "Not enough throughput history yet — need 2+ active weeks."
+    end = sprint.end_date.isoformat()
+    return (
+        f"🔮 {sprint.name} — {payload['remaining']} {payload['unit']} left, ends {end}\n"
+        f"p50 {payload['p50_days']}d · p85 {payload['p85_days']}d · "
+        f"{payload['on_time_probability']:.0%} odds by {end}"
+    )
+
+
 async def handle_update(update: dict, client: TelegramClient) -> None:
     """Route a single Telegram update."""
     message = update.get("message")
@@ -231,6 +249,25 @@ async def handle_update(update: dict, client: TelegramClient) -> None:
                 else:
                     portfolio, sprints = await _fetch_confidence(session)
                     reply = _render_confidence(portfolio, sprints)
+            elif command == "/forecast":
+                if await service.member_for_chat(chat_id) is None:
+                    reply = _LINK_HINT
+                else:
+                    sprint = (
+                        await session.execute(
+                            select(Sprint)
+                            .where(Sprint.status == "active")
+                            .order_by(Sprint.end_date.desc())
+                            .limit(1)
+                        )
+                    ).scalar_one_or_none()
+                    if sprint is None:
+                        reply = "No active sprint to forecast."
+                    else:
+                        try:
+                            reply = _render_forecast(sprint, await forecast(session, sprint.id))
+                        except SprintNotFoundError:
+                            reply = "Sprint vanished."
             elif command == "/blockers":
                 if await service.member_for_chat(chat_id) is None:
                     reply = _LINK_HINT
