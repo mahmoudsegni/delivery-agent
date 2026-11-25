@@ -247,6 +247,14 @@
 
 .kanban-column-dot { width: 8px; height: 8px; border-radius: 50%; }
 .kanban-column-name { flex: 1; color: var(--ink); }
+
+/* WIP breach — column over its cap: amber text + border, count badge shows n/limit */
+.kanban-column-header.wip-limit {
+  color: #B45309;
+  border: 1px solid var(--amber);
+  border-radius: var(--radius);
+}
+
 .kanban-column-count {
   background: var(--surface-2);
   border: 1px solid var(--line);

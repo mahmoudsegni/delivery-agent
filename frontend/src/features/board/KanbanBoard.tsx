@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { RefreshCw, Plus, PanelRightClose, PanelRightOpen, X, CalendarRange } from 'lucide-react';
-import { COLUMNS } from '../../lib/boardColumns';
+import { COLUMNS, WIP_LIMITS, wipBreached } from '../../lib/boardColumns';
 import { subAreaColor, isDefect, typeChip } from '../../lib/subAreas';
 import { useTasks, useTeamMembers, useUpdateTask, useCodingRuns, useFeatures, taskKeys } from '../../hooks/useApi';
 import type { Task } from '../../types';
@@ -149,6 +149,7 @@ export function KanbanBoard({ showCapacity, setShowCapacity, teamFilter, onClear
             COLUMNS.map((column) => {
               const columnCards = cards.filter((c) => c.status === column.id);
               const totalHours = columnCards.reduce((sum, c) => sum + c.hours, 0);
+              const overWip = wipBreached(WIP_LIMITS[column.id], columnCards.length);
               return (
                 <div
                   key={column.id}
@@ -157,10 +158,12 @@ export function KanbanBoard({ showCapacity, setShowCapacity, teamFilter, onClear
                   onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverCol((c) => (c === column.id ? null : c)); }}
                   onDrop={() => onDrop(column.id)}
                 >
-                  <div className="kanban-column-header">
+                  <div className={`kanban-column-header ${overWip ? 'wip-limit' : ''}`}>
                     <div className="kanban-column-dot" style={{ background: column.color }} />
                     <span className="kanban-column-name">{column.name}</span>
-                    <span className="kanban-column-count">{columnCards.length}</span>
+                    <span className="kanban-column-count">
+                      {overWip ? `${columnCards.length}/${WIP_LIMITS[column.id]}` : columnCards.length}
+                    </span>
                     <span className="kanban-column-hours">{totalHours}h</span>
                   </div>
                   <div className="kanban-cards">
