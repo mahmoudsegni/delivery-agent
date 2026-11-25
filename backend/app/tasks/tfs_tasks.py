@@ -9,7 +9,9 @@ from sqlalchemy import select
 
 from app.config import settings
 from app.integrations.factory import get_task_provider
+from app.integrations.standup_state import get_redis
 from app.integrations.task_provider import ExternalTaskCreate, ExternalTaskUpdate
+from app.integrations.telegram_client import TelegramClient
 from app.models.sync_state import SyncState
 from app.models.task import Task as TaskModel
 from app.models.team import TeamMember
@@ -145,6 +147,61 @@ def push_task_to_provider(self: Task, task_id: str, op: str) -> dict:
     return asyncio.run(_push(task_id, op))
 
 
+_STALL_KEY = "sync_stall_alert"
+
+
+async def check_sync_staleness() -> dict:
+    """DM Telegram-linked members when the backlog pull is stalled (once per stall)."""
+    if not settings.task_sync_enabled:
+        return {"skipped": "sync_disabled"}
+
+    async with create_task_session() as session:
+        state = (
+            await session.execute(
+                select(SyncState).order_by(SyncState.last_sync_at.desc()).limit(1)
+            )
+        ).scalar_one_or_none()
+        if state is None or state.last_sync_at is None:
+            return {"skipped": "never_synced"}
+
+        ts = state.last_sync_at
+        if ts.tzinfo is None:  # naive timestamps (SQLite/demo) are UTC
+            ts = ts.replace(tzinfo=timezone.utc)
+        age_hours = (datetime.now(timezone.utc) - ts).total_seconds() / 3600
+        stalled = state.last_status == "error" or age_hours > settings.sync_stale_hours
+
+        redis = get_redis()
+        try:
+            if not stalled:
+                await redis.delete(_STALL_KEY)  # recovery: next stall alerts again
+                return {"status": "ok", "age_hours": round(age_hours, 1)}
+
+            marker = ts.isoformat()
+            if await redis.get(_STALL_KEY) == marker:
+                return {"status": "stalled", "alerted": False}  # already alerted
+
+            members = (
+                await session.execute(
+                    select(TeamMember).where(
+                        TeamMember.telegram_chat_id.is_not(None)
+                    )
+                )
+            ).scalars()
+            text = f"⚠️ Backlog sync stalled: last ok sync {age_hours:.0f}h ago"
+            if state.last_error:
+                text += f"\n{state.last_error}"
+            sent = 0
+            if settings.telegram_bot_token:
+                client = TelegramClient(settings.telegram_bot_token)
+                for member in members:
+                    await client.send_message(member.telegram_chat_id, text)
+                    sent += 1
+            await redis.set(_STALL_KEY, marker)
+            return {"status": "stalled", "alerted": True, "sent": sent}
+        finally:
+            await redis.aclose()
+
+
 @celery_app.task(
     bind=True,
     max_retries=3,
@@ -157,3 +214,11 @@ def sync_tfs_tasks(self: Task) -> dict:
     """Periodic pull of work items from the external provider into our DB."""
     logger.info("Syncing tasks from external provider")
     return asyncio.run(_sync())
+
+
+# No autoretry: a failed tick (DB/Redis down) retries naturally on the next
+# beat run, and retrying a half-sent alert would re-DM members.
+@celery_app.task()
+def check_sync_staleness_task() -> dict:
+    """Beat job: DM members when the backlog sync is stalled (once per stall)."""
+    return asyncio.run(check_sync_staleness())

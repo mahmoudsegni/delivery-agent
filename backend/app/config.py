@@ -129,6 +129,10 @@ class Settings(BaseSettings):
     # TASK_SYNC_ENABLED=true to re-enable the scheduled pull. The manual
     # "Sync from TFS" endpoint is unaffected by this flag.
     task_sync_enabled: bool = False
+    # Sync-stall watchdog: alert when the newest pull is older than this many
+    # hours or ended in "error". Re-check cadence (seconds) for the beat job.
+    sync_stale_hours: int = 6
+    sync_check_interval: int = 900
 
     # ------------------------------------------------------------------
     # Telegram standup bot

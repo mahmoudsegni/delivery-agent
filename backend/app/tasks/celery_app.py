@@ -61,6 +61,11 @@ if settings.task_sync_enabled:
         "task": "app.tasks.tfs_tasks.sync_tfs_tasks",
         "schedule": float(settings.tfs_sync_interval),
     }
+    # Watchdog: DM when that pull stalls (alert once per stall episode).
+    _beat_schedule["sync-stall-check"] = {
+        "task": "app.tasks.tfs_tasks.check_sync_staleness_task",
+        "schedule": float(settings.sync_check_interval),
+    }
 
 
 # Create Celery application
