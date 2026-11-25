@@ -9,6 +9,7 @@ Responsibilities:
 - ``/confidence``    -> portfolio confidence + active sprint bands (linked chats only).
 - ``/forecast``     -> Monte Carlo completion odds for the active sprint (linked chats only).
 - ``/blockers``      -> deterministic stuck-work report from the heuristic detector (linked chats only).
+- ``/groom``         -> backlog hygiene: stale, unestimated, unassigned (linked chats only).
 - ``/team``          -> per-member capacity vs assigned hours for the active sprint (linked chats only).
 - ``/usage``         -> LLM token spend for the last 7 days, from the ledger (linked chats only).
 - ``/skip [reason]`` -> mark yourself out of the open standup round (no nudges, not missing).
@@ -57,6 +58,7 @@ _HELP_TEXT = (
     "/forecast — will the active sprint finish on time?\n"
     "/blockers — what's stuck right now (no LLM needed)\n"
     "/team — capacity vs assigned load this sprint (no LLM needed)\n"
+    "/groom — backlog hygiene: stale, unestimated, unassigned (no LLM needed)\n"
     "/usage — LLM spend, last 7 days\n"
     "/skip <reason> — mark yourself out of today's standup\n"
     "/ask <question> — free-text Q&A over the live snapshot (remembers the last few turns)\n"
@@ -285,6 +287,24 @@ async def handle_update(update: dict, client: TelegramClient) -> None:
                             f"🚧 {s['totalBlockers']} stuck item(s) — "
                             f"{s['critical']} high, {s['medium']} medium, {s['low']} low"
                             + (f" ({data['sprint']})" if data["sprint"] else "")
+                        )
+                        reply = ("\n".join([header] + lines))[:4000]
+            elif command == "/groom":
+                if await service.member_for_chat(chat_id) is None:
+                    reply = _LINK_HINT
+                else:
+                    data = await AgentAnalysisService(session).grooming_data()
+                    s = data["summary"]
+                    lines = [
+                        f"[{i['category']}] {i['ref']} {i['title']} · {i['days']}d"
+                        for i in data["items"][:10]
+                    ]
+                    if not lines:
+                        reply = "Backlog is clean ✨"
+                    else:
+                        header = (
+                            f"🧹 Backlog hygiene — {s['stale']} stale · "
+                            f"{s['unestimated']} unestimated · {s['unassigned']} unassigned"
                         )
                         reply = ("\n".join([header] + lines))[:4000]
             elif command == "/team":

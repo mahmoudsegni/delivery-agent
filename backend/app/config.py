@@ -224,6 +224,8 @@ class Settings(BaseSettings):
     autopilot_stale_task_days: int = 3          # nudge in_progress older than this
     autopilot_blocker_escalation_days: int = 5  # escalate in_progress older than this
     autopilot_triage_per_tick: int = 3          # bound Groq triage calls per tick
+    # /groom backlog hygiene: non-done task with no state change this long is stale.
+    groom_stale_days: int = 14
 
 
 # Singleton settings instance

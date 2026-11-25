@@ -744,3 +744,64 @@ async def test_plain_text_still_records_answer(monkeypatch):
     client, recorded = await _run(monkeypatch, "Shipped the retry job")
     assert recorded == ["Shipped the retry job"]
     assert not client.sent  # AnswerResult(reply=None) -> nothing sent
+
+
+# ------------------------------------------------------------------
+# /groom (issue #51)
+# ------------------------------------------------------------------
+
+
+def _groom_data(**over):
+    base = {
+        "summary": {"stale": 2, "unestimated": 1, "unassigned": 3},
+        "items": [
+            {"category": "stale", "ref": "DEV-201", "title": "Fix search ranking", "days": 21},
+            {"category": "stale", "ref": "DEV-202", "title": "Migrate icons", "days": 18},
+            {"category": "unestimated", "ref": "DEV-203", "title": "Storefront badges", "days": 4},
+            {"category": "unassigned", "ref": "DEV-203", "title": "Storefront badges", "days": 4},
+            {"category": "unassigned", "ref": "DEV-204", "title": "Rate-limit webhook", "days": 2},
+            {"category": "unassigned", "ref": "DEV-205", "title": "Purge old exports", "days": 1},
+        ],
+    }
+    base.update(over)
+    return base
+
+
+async def _run_groom(monkeypatch, *, member=True, data=None):
+    """Stub the pure extraction; fail hard if /groom ever routes to a persisting path."""
+
+    async def _data(self):
+        return _groom_data() if data is None else data
+
+    def _forbidden(self):
+        raise AssertionError("/groom must stay deterministic: no _save")
+
+    monkeypatch.setattr(AgentAnalysisService, "grooming_data", _data)
+    monkeypatch.setattr(AgentAnalysisService, "_save", _forbidden)
+    return await _run(monkeypatch, "/groom", member=member)
+
+
+async def test_groom_renders_counts_and_items(monkeypatch):
+    client, recorded = await _run_groom(monkeypatch)
+    assert not recorded
+    reply = client.sent[0][1]
+    assert "2 stale" in reply and "1 unestimated" in reply and "3 unassigned" in reply
+    assert "DEV-201 Fix search ranking" in reply and "21d" in reply
+    assert "[unassigned] DEV-204" in reply
+    assert len(reply) < 4096
+
+
+async def test_groom_clean_backlog(monkeypatch):
+    data = _groom_data(summary={"stale": 0, "unestimated": 0, "unassigned": 0}, items=[])
+    client, _ = await _run_groom(monkeypatch, data=data)
+    assert "clean" in client.sent[0][1]
+
+
+async def test_groom_unlinked_chat(monkeypatch):
+    client, _ = await _run_groom(monkeypatch, member=False)
+    assert "/start <code>" in client.sent[0][1]
+
+
+async def test_help_lists_groom(monkeypatch):
+    client, _ = await _run(monkeypatch, "/help")
+    assert "/groom" in client.sent[0][1]

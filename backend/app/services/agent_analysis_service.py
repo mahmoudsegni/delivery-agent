@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 import logging
 from collections import defaultdict
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import quote
 
@@ -310,6 +310,69 @@ class AgentAnalysisService:
             "summary": {"totalBlockers": len(blockers), "critical": high, "medium": med, "low": low},
             "blockers": blockers,
             "overloaded": overloaded,
+        }
+
+    # ------------------------------------------------------------------
+    # Backlog grooming (no LLM)
+    # ------------------------------------------------------------------
+    async def grooming_data(self) -> dict[str, Any]:
+        """Pure backlog-hygiene facts: stale / unestimated / unassigned. No LLM, no persistence."""
+        as_of = await self._data_as_of()
+        cutoff = as_of - timedelta(days=max(1, int(settings.groom_stale_days)))
+        # Same active-sprint pick as /forecast.
+        sprint = (
+            await self.db.execute(
+                select(Sprint)
+                .where(Sprint.status == "active")
+                .order_by(Sprint.end_date.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+
+        non_done = Task.status != "done"
+        last_touch = func.coalesce(Task.state_changed_at, Task.updated_at, Task.created_at)
+        stale = (
+            await self.db.execute(
+                select(Task).where(non_done, last_touch < cutoff).order_by(last_touch)
+            )
+        ).scalars().all()
+
+        # One fetch for both sprint-scoped signals (same rows, two filters).
+        if sprint:
+            sprint_tasks = (
+                (
+                    await self.db.execute(
+                        select(Task).where(non_done, Task.sprint_id == sprint.id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        else:
+            sprint_tasks = []
+        unestimated = [t for t in sprint_tasks if t.story_points is None]
+        unassigned = [t for t in sprint_tasks if t.assignee_id is None]
+
+        def _item(category: str, t: Task) -> dict[str, Any]:
+            since = _aware(t.state_changed_at or t.updated_at or t.created_at)
+            return {
+                "category": category,
+                "ref": item_ref(t),
+                "title": t.title,
+                "days": max(0, (as_of - since).days) if since else 0,
+            }
+
+        return {
+            "summary": {
+                "stale": len(stale),
+                "unestimated": len(unestimated),
+                "unassigned": len(unassigned),
+            },
+            "items": (
+                [_item("stale", t) for t in stale[:10]]
+                + [_item("unestimated", t) for t in unestimated]
+                + [_item("unassigned", t) for t in unassigned]
+            ),
         }
 
     async def detect_blockers(self) -> dict[str, Any]:
