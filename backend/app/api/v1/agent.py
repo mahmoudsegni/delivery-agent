@@ -147,6 +147,12 @@ async def run_analysis(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
 
 
+@router.get("/grooming")
+async def get_grooming(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    """Deterministic backlog hygiene: stale / unestimated / unassigned."""
+    return await AgentAnalysisService(db).grooming_data()
+
+
 @router.post(
     "/request",
     response_model=AgentRequestResponse,

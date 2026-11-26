@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Plus, X } from 'lucide-react';
 import { subAreaColor, isDefect, typeChip } from '../../lib/subAreas';
-import { useTasks, useTeamMembers, useCodingRuns, useFeatures } from '../../hooks/useApi';
+import { useTasks, useTeamMembers, useCodingRuns, useFeatures, useGrooming } from '../../hooks/useApi';
 import { Button } from '../../ui/Button';
 import { Spinner } from '../../ui/Spinner';
 import { EmptyState } from '../../ui/EmptyState';
@@ -19,6 +19,30 @@ interface BacklogViewProps {
 
 const taskHours = (t: { estimated_hours: number | null; story_points: number | null }) =>
   t.estimated_hours ?? t.story_points ?? 0;
+
+/** Backlog hygiene chips (issue #56): counts from /agent/grooming, amber when > 0. */
+function HygieneChips() {
+  const { data } = useGrooming();
+  const s = data?.summary;
+  if (!s) return null;
+  const entries = [
+    ['stale', '🧹', s.stale],
+    ['unestimated', '📐', s.unestimated],
+    ['unassigned', '👤', s.unassigned],
+  ] as const;
+  if (entries.every(([, , n]) => n === 0)) {
+    return <span className="filter-chip hygiene-chip">Backlog is clean ✨</span>;
+  }
+  return (
+    <>
+      {entries.map(([key, icon, n]) => (
+        <span key={key} className={`filter-chip hygiene-chip${n > 0 ? ' warn' : ''}`}>
+          {icon} {n} {key}
+        </span>
+      ))}
+    </>
+  );
+}
 
 export function BacklogView({ teamFilter, onClearTeam, sprintId }: BacklogViewProps) {
   const { data: allTasks = [], isLoading } = useTasks();
@@ -62,6 +86,7 @@ export function BacklogView({ teamFilter, onClearTeam, sprintId }: BacklogViewPr
             <X size={13} strokeWidth={2.5} />
           </button>
         )}
+        <HygieneChips />
         <div className="header-actions">
           <span className="mono" style={{ color: 'var(--ink-soft)', marginRight: 8, fontSize: 12, fontWeight: 600 }}>
             {visible.length} items · {totalHours}h total

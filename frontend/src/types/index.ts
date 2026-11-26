@@ -595,6 +595,12 @@ export interface IntegrationHealth {
   snapshot_lag_days: number | null;
 }
 
+/** Mirrors AgentAnalysisService.grooming_data(): counts only, items are the Telegram drill-down. */
+export interface GroomingSummary {
+  summary: { stale: number; unestimated: number; unassigned: number };
+  items: { category: string; ref: string; title: string; days: number | null }[];
+}
+
 export interface LlmUsage {
   days: number;
   calls: number;

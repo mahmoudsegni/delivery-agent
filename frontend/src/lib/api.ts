@@ -4,7 +4,7 @@ import type {
   DecisionItem, Feature, FeatureCreate, PortfolioResponse, Proposal, RepoCreateResponse,
   RunEventsResponse, Sprint, SprintCreate, StreamDetail, StreamListItem, Task, TaskCreate, TaskUpdate, TeamMember,
   MemberAbsence,
-  CostByStreamResponse, DeliverySummary, FlowMetrics, IntegrationHealth, InvestmentProfileResponse, InvestmentTrendResponse, RoadmapResponse,
+  CostByStreamResponse, DeliverySummary, FlowMetrics, GroomingSummary, IntegrationHealth, InvestmentProfileResponse, InvestmentTrendResponse, RoadmapResponse,
   LlmUsage,
   SprintBurndown, SprintDashboard, SprintForecast, TeamLoadRow, VelocityResponse, WorkforceTrend,
   SearchResults,
@@ -338,6 +338,10 @@ export async function getDeliverySummary(days = 14, streamId?: string | null): P
 
 export async function getIntegrationHealth(): Promise<IntegrationHealth> {
   return json<IntegrationHealth>(await apiFetch('/api/v1/dashboard/integrations'));
+}
+
+export async function getGrooming(): Promise<GroomingSummary> {
+  return json<GroomingSummary>(await apiFetch('/api/v1/agent/grooming'));
 }
 
 export async function getLlmUsage(days = 7): Promise<LlmUsage> {
