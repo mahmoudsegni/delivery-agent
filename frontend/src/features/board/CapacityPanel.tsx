@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { PERSON_WIP_LIMIT, wipBreached } from '../../lib/boardColumns';
 import { DEFAULT_CAPACITY_HOURS, WORKDAY_HOURS, countWorkdays, currentSprintId, overlapsWindow } from '../../lib/capacity';
 import type { Sprint } from '../../types';
 import { useAbsences, useCreateAbsence, useDeleteAbsence, useSprints, useTasks, useTeamMembers } from '../../hooks/useApi';
@@ -78,12 +79,16 @@ export function CapacityPanel({ sprintId }: CapacityPanelProps) {
   }
 
   const assignedByMember = new Map<string, number>();
+  const wipByMember = new Map<string, number>();
   for (const t of inSprint) {
     if (!t.assignee_id) continue;
     // Same measure the board columns use. Synced work items estimate in hours
     // (OriginalEstimate) and carry no story points, so points alone read zero.
     const hours = t.estimated_hours ?? t.story_points ?? 0;
     assignedByMember.set(t.assignee_id, (assignedByMember.get(t.assignee_id) || 0) + hours);
+    if (t.status === 'in_progress') {
+      wipByMember.set(t.assignee_id, (wipByMember.get(t.assignee_id) || 0) + 1);
+    }
   }
 
   // Only people carrying work in this sprint, busiest first. The full roster is
@@ -106,6 +111,7 @@ export function CapacityPanel({ sprintId }: CapacityPanelProps) {
         {ordered.map((member) => {
           const assigned = assignedByMember.get(member.id) || 0;
           const daysOff = daysOffByMember.get(member.id) || 0;
+          const wip = wipByMember.get(member.id) || 0;
           const base = member.capacity_hours_per_sprint || DEFAULT_CAPACITY_HOURS;
           const capacity = Math.max(0, base - daysOff * WORKDAY_HOURS);
           const percent = Math.min((assigned / capacity) * 100, 100);
@@ -119,6 +125,11 @@ export function CapacityPanel({ sprintId }: CapacityPanelProps) {
             <div key={member.id} className="capacity-member">
               <div className="capacity-member-name">
                 <span className="capacity-member-name-text">{member.name}</span>
+                {wipBreached(PERSON_WIP_LIMIT, wip) && (
+                  <span className="capacity-wip" title="In-progress cards beyond the per-person WIP cap">
+                    WIP {wip}/{PERSON_WIP_LIMIT}
+                  </span>
+                )}
                 {scopedSprint && (
                   <button
                     className="capacity-add-off"

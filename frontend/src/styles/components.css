@@ -392,6 +392,9 @@
 button.capacity-days-off { background: none; font: inherit; cursor: pointer; }
 button.capacity-days-off:hover { border-color: var(--accent); color: var(--ink); }
 
+/* Per-person WIP breach: same amber language as the column caps. */
+.capacity-wip { padding: 1px 6px; border-radius: 999px; border: 1px solid var(--amber); color: #B45309; }
+
 /* Add / remove time off from the rail (native date inputs, no picker lib). */
 .capacity-timeoff-form { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 4px; }
 .capacity-timeoff-form input {
