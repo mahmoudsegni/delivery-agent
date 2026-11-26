@@ -1,11 +1,12 @@
-import type { CSSProperties } from 'react';
+import { useState, type CSSProperties } from 'react';
 import {
   ChevronRight, Inbox, MessageCircleQuestion, Newspaper, TrendingUp, X,
 } from 'lucide-react';
 import {
-  useCodingStats, useDecisions, useLatestBrief, useLlmUsage, usePortfolio,
+  useCodingStats, useDecisions, useIntegrationHealth, useLatestBrief, useLlmUsage, usePortfolio,
 } from '../../hooks/useApi';
 import { formatTokens, topFeatures } from '../../lib/llmUsage';
+import { syncStale } from '../../lib/syncHealth';
 import { Badge } from '../../ui/Badge';
 import { Button } from '../../ui/Button';
 import { EmptyState } from '../../ui/EmptyState';
@@ -54,6 +55,27 @@ function BriefTeaser({ onOpenBriefs, onOpenAsk }: { onOpenBriefs: () => void; on
   );
 }
 
+/** Amber, dismissible warning that the board is stale — the same stall signal
+ *  #50 ships to Telegram, rendered where the team actually looks. */
+function SyncStaleBanner() {
+  const [dismissed, setDismissed] = useState(false);
+  const { data } = useIntegrationHealth();
+  if (dismissed || !syncStale(data?.last_sync_at, data?.last_status)) return null;
+  const hours = data?.last_sync_at
+    ? (Date.now() - new Date(data.last_sync_at).getTime()) / 3600_000
+    : null;
+  const age = hours == null ? '' : ` — last ok sync ${hours >= 48 ? `${Math.round(hours / 24)}d` : `${Math.round(hours)}h`} ago`;
+  const err = data?.last_error ? ` · ${data.last_error.slice(0, 80)}` : '';
+  return (
+    <div className="command-stale-banner" role="alert">
+      <span style={{ flex: 1 }}>⚠️ Backlog sync stalled{age}{err}</span>
+      <button aria-label="Dismiss sync warning" onClick={() => setDismissed(true)}>
+        <X size={14} strokeWidth={2.5} />
+      </button>
+    </div>
+  );
+}
+
 interface CommandCenterProps {
   onOpenStream: (id: string) => void;
   onOpenBriefs: () => void;
@@ -75,6 +97,7 @@ export function CommandCenter({ onOpenStream, onOpenBriefs, onOpenAsk }: Command
 
   return (
     <>
+      <SyncStaleBanner />
       <header className="header">
         <h1 className="header-title">Command Center</h1>
         <div className="header-actions">
