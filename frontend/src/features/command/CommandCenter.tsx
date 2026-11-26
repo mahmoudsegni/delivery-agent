@@ -59,10 +59,10 @@ function BriefTeaser({ onOpenBriefs, onOpenAsk }: { onOpenBriefs: () => void; on
  *  #50 ships to Telegram, rendered where the team actually looks. */
 function SyncStaleBanner() {
   const [dismissed, setDismissed] = useState(false);
-  const { data } = useIntegrationHealth();
+  const { data, dataUpdatedAt } = useIntegrationHealth();
   if (dismissed || !syncStale(data?.last_sync_at, data?.last_status)) return null;
   const hours = data?.last_sync_at
-    ? (Date.now() - new Date(data.last_sync_at).getTime()) / 3600_000
+    ? (dataUpdatedAt - new Date(data.last_sync_at).getTime()) / 3600_000
     : null;
   const age = hours == null ? '' : ` — last ok sync ${hours >= 48 ? `${Math.round(hours / 24)}d` : `${Math.round(hours)}h`} ago`;
   const err = data?.last_error ? ` · ${data.last_error.slice(0, 80)}` : '';
