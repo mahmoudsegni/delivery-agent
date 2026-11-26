@@ -23,6 +23,7 @@ from app.services.brief_service import BriefService
 from app.services.sprint_service import SprintNotFoundError
 from app.services.standup_service import AnswerResult, StandupService
 from app.models.team import TeamMember
+from app.models.task import Task
 
 
 class FakeClient:
@@ -805,3 +806,55 @@ async def test_groom_unlinked_chat(monkeypatch):
 async def test_help_lists_groom(monkeypatch):
     client, _ = await _run(monkeypatch, "/help")
     assert "/groom" in client.sent[0][1]
+
+
+# ------------------------------------------------------------------
+# grooming_data service contract (issue #54)
+# ------------------------------------------------------------------
+
+
+class FakeResult:
+    def __init__(self, scalar=None, rows=()):
+        self._scalar = scalar
+        self._rows = list(rows)
+
+    def scalar(self):
+        return self._scalar
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        return list(self._rows)
+
+
+class FakeSession:
+    """Pops one canned result per execute(); a reintroduced Sprint query
+    breaks this contract by desynchronizing the queue."""
+
+    def __init__(self, results):
+        self._results = list(results)
+
+    async def execute(self, stmt):
+        assert self._results, f"unexpected extra query: {stmt}"
+        return self._results.pop(0)
+
+
+async def test_grooming_data_is_backlog_wide_without_active_sprint():
+    # No Sprint query is made at all: three results, three queries.
+    rows = [
+        Task(title="Fix loyalty rounding", status="todo", story_points=3,
+             assignee_id="11111111-1111-1111-1111-111111111111", external_id="4130"),
+        Task(title="Storefront badges", status="backlog", story_points=None,
+             assignee_id="22222222-2222-2222-2222-222222222222", external_id="4131"),
+        Task(title="Rate-limit webhook", status="todo", story_points=2,
+             assignee_id=None, external_id="4132"),
+    ]
+    session = FakeSession(
+        [FakeResult(scalar=None), FakeResult(), FakeResult(rows=rows)]
+    )
+    data = await AgentAnalysisService(session).grooming_data()
+    assert data["summary"] == {"stale": 0, "unestimated": 1, "unassigned": 1}
+    assert any(
+        i["category"] == "unestimated" and i["ref"] == "#4131" for i in data["items"]
+    )

@@ -319,16 +319,6 @@ class AgentAnalysisService:
         """Pure backlog-hygiene facts: stale / unestimated / unassigned. No LLM, no persistence."""
         as_of = await self._data_as_of()
         cutoff = as_of - timedelta(days=max(1, int(settings.groom_stale_days)))
-        # Same active-sprint pick as /forecast.
-        sprint = (
-            await self.db.execute(
-                select(Sprint)
-                .where(Sprint.status == "active")
-                .order_by(Sprint.end_date.desc())
-                .limit(1)
-            )
-        ).scalar_one_or_none()
-
         non_done = Task.status != "done"
         last_touch = func.coalesce(Task.state_changed_at, Task.updated_at, Task.created_at)
         stale = (
@@ -337,21 +327,12 @@ class AgentAnalysisService:
             )
         ).scalars().all()
 
-        # One fetch for both sprint-scoped signals (same rows, two filters).
-        if sprint:
-            sprint_tasks = (
-                (
-                    await self.db.execute(
-                        select(Task).where(non_done, Task.sprint_id == sprint.id)
-                    )
-                )
-                .scalars()
-                .all()
-            )
-        else:
-            sprint_tasks = []
-        unestimated = [t for t in sprint_tasks if t.story_points is None]
-        unassigned = [t for t in sprint_tasks if t.assignee_id is None]
+        # One fetch for both backlog-wide signals (same rows, two filters).
+        all_open = (
+            await self.db.execute(select(Task).where(non_done))
+        ).scalars().all()
+        unestimated = [t for t in all_open if t.story_points is None]
+        unassigned = [t for t in all_open if t.assignee_id is None]
 
         def _item(category: str, t: Task) -> dict[str, Any]:
             since = _aware(t.state_changed_at or t.updated_at or t.created_at)
