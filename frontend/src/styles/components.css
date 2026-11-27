@@ -176,9 +176,23 @@
 .filter-chip:hover { background: var(--surface-3); border-color: var(--line-strong); }
 .filter-chip svg { color: var(--ink-mute); }
 
-/* Backlog hygiene chips (issue #56): non-interactive; amber when count > 0 */
+/* Backlog hygiene chips (issue #56): amber when count > 0; #58 made them toggleable drill-downs */
 .hygiene-chip { cursor: default; }
 .hygiene-chip.warn { background: var(--tint-amber); color: #B45309; border-color: var(--amber); }
+button.hygiene-chip { cursor: pointer; }
+.hygiene-chip.is-active { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
+.hygiene { position: relative; display: flex; gap: 14px; align-items: center; }
+/* Drill-down panel hangs below the chips; same visual language as .combo-panel */
+.hygiene-panel {
+  position: absolute; top: calc(100% + 10px); left: 0; z-index: 60;
+  min-width: 320px; max-width: 480px; padding: 6px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow-lg);
+}
+.hygiene-item { display: flex; align-items: baseline; gap: 8px; padding: 4px 8px; font-size: 12.5px; border-radius: var(--radius-sm); }
+.hygiene-item:hover { background: var(--surface-2); }
+.hygiene-ref { font-family: var(--font-mono); font-size: 11px; color: var(--ink-mute); flex-shrink: 0; }
+.hygiene-title { color: var(--ink); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hygiene-days { margin-left: auto; flex-shrink: 0; font-size: 11px; color: #B45309; }
 
 /* ---- Content ---- */
 .content { flex: 1; overflow-y: auto; padding: 24px; }

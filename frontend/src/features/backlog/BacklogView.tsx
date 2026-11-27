@@ -20,11 +20,12 @@ interface BacklogViewProps {
 const taskHours = (t: { estimated_hours: number | null; story_points: number | null }) =>
   t.estimated_hours ?? t.story_points ?? 0;
 
-/** Backlog hygiene chips (issue #56): counts from /agent/grooming, amber when > 0. */
+/** Backlog hygiene chips (issue #56, drill-down #58): counts from /agent/grooming, click to see items. */
 function HygieneChips() {
   const { data } = useGrooming();
+  const [open, setOpen] = useState<string | null>(null);
   const s = data?.summary;
-  if (!s) return null;
+  if (!s || !data) return null;
   const entries = [
     ['stale', '🧹', s.stale],
     ['unestimated', '📐', s.unestimated],
@@ -33,14 +34,36 @@ function HygieneChips() {
   if (entries.every(([, , n]) => n === 0)) {
     return <span className="filter-chip hygiene-chip">Backlog is clean ✨</span>;
   }
+  const items = open ? data.items.filter((i) => i.category === open) : [];
   return (
-    <>
+    <div className="hygiene">
       {entries.map(([key, icon, n]) => (
-        <span key={key} className={`filter-chip hygiene-chip${n > 0 ? ' warn' : ''}`}>
+        <button
+          key={key}
+          type="button"
+          className={`filter-chip hygiene-chip${n > 0 ? ' warn' : ''}${open === key ? ' is-active' : ''}`}
+          aria-pressed={open === key}
+          onClick={() => setOpen(open === key ? null : key)}
+        >
           {icon} {n} {key}
-        </span>
+        </button>
       ))}
-    </>
+      {open && (
+        <div className="hygiene-panel">
+          {items.length === 0 ? (
+            <div className="hygiene-item">No {open} items — nice ✨</div>
+          ) : (
+            items.map((i) => (
+              <div key={i.ref} className="hygiene-item">
+                <span className="hygiene-ref">{i.ref}</span>
+                <span className="hygiene-title">{i.title}</span>
+                {i.days !== null && <span className="hygiene-days">{i.days}d untouched</span>}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
