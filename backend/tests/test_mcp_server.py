@@ -1,5 +1,5 @@
 """MCP endpoint contract (#16): the mounted Streamable HTTP app answers a
-real JSON-RPC handshake and exposes the four read-only tools.
+real JSON-RPC handshake and exposes the six read-only tools.
 
 No DB, no network (test_forecast philosophy): we drive the full FastAPI app
 in-process — through the /mcp mount and its lifespan — and only exercise
@@ -59,4 +59,11 @@ async def _drive() -> list[str]:
 
 def test_mcp_mount_handshake_and_tool_registry():
     names = asyncio.run(_drive())
-    assert set(names) == {"delivery_snapshot", "backlog", "forecast", "sprints"}
+    assert set(names) == {
+        "delivery_snapshot",
+        "backlog",
+        "forecast",
+        "sprints",
+        "grooming",
+        "flow",
+    }

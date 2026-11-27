@@ -15,7 +15,9 @@ from mcp.server.transport_security import TransportSecuritySettings
 from app.database import async_session_maker
 from app.schemas.sprint import SprintResponse
 from app.schemas.task import TaskResponse
+from app.services.agent_analysis_service import AgentAnalysisService
 from app.services.brief_service import BriefService
+from app.services.dashboard_service import DashboardService
 from app.services.forecast_service import forecast as run_forecast
 from app.services.sprint_service import SprintNotFoundError, SprintService
 from app.services.task_service import TaskService
@@ -24,9 +26,11 @@ server = MCPServer(
     name="delivery-agent",
     instructions=(
         "Read-only access to this team's delivery data: the live snapshot "
-        "the morning brief is written from, the backlog, sprints, and Monte "
-        "Carlo completion forecasts. Call delivery_snapshot first — it "
-        "usually answers 'what's going on' in one shot."
+        "the morning brief is written from, the backlog, sprints, Monte "
+        "Carlo completion forecasts, backlog-grooming hygiene, and flow "
+        "metrics (cycle time, throughput, aging WIP). Call "
+        "delivery_snapshot first — it usually answers 'what's going on' "
+        "in one shot."
     ),
 )
 
@@ -82,6 +86,23 @@ async def sprints() -> str:
                 "total": total,
                 "sprints": [SprintResponse.model_validate(s).model_dump(mode="json") for s in rows],
             }
+        )
+
+
+@server.tool()
+async def grooming() -> str:
+    """Backlog hygiene: stale / unestimated / unassigned items, with counts."""
+    async with async_session_maker() as db:
+        return json.dumps(await AgentAnalysisService(db).grooming_data(), default=str)
+
+
+@server.tool()
+async def flow(days: int = 30) -> str:
+    """Flow metrics: cycle/lead time percentiles, daily throughput, aging WIP."""
+    days = min(max(days, 1), 90)
+    async with async_session_maker() as db:
+        return json.dumps(
+            (await DashboardService(db).flow_metrics(days=days)).model_dump(mode="json")
         )
 
 
