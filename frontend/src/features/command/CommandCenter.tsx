@@ -5,7 +5,7 @@ import {
 import {
   useCodingStats, useDecisions, useIntegrationHealth, useLatestBrief, useLlmUsage, usePortfolio,
 } from '../../hooks/useApi';
-import { formatTokens, topFeatures } from '../../lib/llmUsage';
+import { budgetLevel, formatTokens, topFeatures } from '../../lib/llmUsage';
 import { syncStale } from '../../lib/syncHealth';
 import { Badge } from '../../ui/Badge';
 import { Button } from '../../ui/Button';
@@ -90,6 +90,7 @@ export function CommandCenter({ onOpenStream, onOpenBriefs, onOpenAsk }: Command
   const { data: decisions = [] } = useDecisions();
   const { data: stats } = useCodingStats();
   const { data: usage } = useLlmUsage();
+  const budget = usage ? budgetLevel(usage.today_tokens, usage.daily_budget) : 'off';
 
   const avgConfidence = portfolio?.avg_confidence ?? null;
   const trend = portfolio?.confidence_trend ?? [];
@@ -160,6 +161,11 @@ export function CommandCenter({ onOpenStream, onOpenBriefs, onOpenAsk }: Command
           >
             LLM usage (7d): {usage.calls.toLocaleString()} calls ·{' '}
             {usage.total_tokens.toLocaleString()} tokens · avg {usage.avg_latency_ms}ms
+            {budget !== 'off' && (
+              <span style={{ color: budget === 'over' ? 'var(--danger)' : '#B45309' }}>
+                {' '}· today {formatTokens(usage.today_tokens)}/{formatTokens(usage.daily_budget)}
+              </span>
+            )}
             {Object.keys(usage.by_feature).length > 0 && (
               <>
                 {' '}—{' '}

@@ -19,6 +19,14 @@ export function topFeatures(
     .slice(0, n);
 }
 
+/** 'off' when no budget; amber at ≥80%; red only strictly over. */
+export function budgetLevel(todayTokens: number, budget: number): 'off' | 'ok' | 'warn' | 'over' {
+  if (!budget) return 'off';
+  if (todayTokens > budget) return 'over';
+  if (todayTokens >= budget * 0.8) return 'warn';
+  return 'ok';
+}
+
 /** 0/999 plain, then one decimal k/M with trailing ".0" dropped (8k, 8.2k, 1.5M). */
 export function formatTokens(n: number): string {
   if (n < 1000) return String(n);

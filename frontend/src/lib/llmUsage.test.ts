@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { topFeatures, formatTokens } from './llmUsage';
+import { budgetLevel, topFeatures, formatTokens } from './llmUsage';
 
 const ledger = (entries: Record<string, number>) =>
   Object.fromEntries(
@@ -24,6 +24,16 @@ describe('topFeatures', () => {
   it('honours n', () => {
     const by = ledger({ a: 30, b: 20, c: 10 });
     expect(topFeatures(by, 2).map((f) => f.feature)).toEqual(['a', 'b']);
+  });
+});
+
+describe('budgetLevel', () => {
+  it('marks the boundaries the strip colours', () => {
+    expect(budgetLevel(100, 0)).toBe('off');
+    expect(budgetLevel(799, 1000)).toBe('ok');
+    expect(budgetLevel(800, 1000)).toBe('warn');
+    expect(budgetLevel(1000, 1000)).toBe('warn'); // boundary: warn, not over
+    expect(budgetLevel(1001, 1000)).toBe('over');
   });
 });
 

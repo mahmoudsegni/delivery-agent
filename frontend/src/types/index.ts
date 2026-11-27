@@ -605,6 +605,8 @@ export interface LlmUsage {
   days: number;
   calls: number;
   total_tokens: number;
+  today_tokens: number;
+  daily_budget: number;
   avg_latency_ms: number;
   by_feature: Record<string, { calls: number; total_tokens: number }>;
 }

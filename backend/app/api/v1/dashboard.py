@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.models.llm_call import LLMCall
 from app.schemas.dashboard import (
@@ -170,14 +171,17 @@ async def get_llm_usage(
         .scalars()
         .all()
     )
-    return summarize_usage(rows, days)
+    return summarize_usage(rows, days, budget=settings.llm_daily_token_budget)
 
 
-def summarize_usage(rows: Sequence[Any], days: int) -> dict:
+def summarize_usage(rows: Sequence[Any], days: int, budget: int = 0) -> dict:
     """Pure aggregate over ledger rows, keeping only the last ``days`` days."""
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=days)
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
     calls = 0
     total_tokens = 0
+    today_tokens = 0
     latency_sum = 0
     by_feature: dict[str, dict[str, int]] = {}
     for r in rows:
@@ -185,6 +189,8 @@ def summarize_usage(rows: Sequence[Any], days: int) -> dict:
             continue
         calls += 1
         total_tokens += r.total_tokens
+        if r.created_at >= midnight:
+            today_tokens += r.total_tokens
         latency_sum += r.latency_ms
         f = by_feature.setdefault(r.feature, {"calls": 0, "total_tokens": 0})
         f["calls"] += 1
@@ -193,6 +199,8 @@ def summarize_usage(rows: Sequence[Any], days: int) -> dict:
         "days": days,
         "calls": calls,
         "total_tokens": total_tokens,
+        "today_tokens": today_tokens,
+        "daily_budget": budget,
         "avg_latency_ms": round(latency_sum / calls) if calls else 0,
         "by_feature": by_feature,
     }

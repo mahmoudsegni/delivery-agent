@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     # LLM Configuration
     llm_provider: str = "litellm"
     llm_model: str = "gpt-4"
+    # Daily token budget for the Command Center usage strip (issue #60).
+    # Tokens; 0 = off (the default). When set, the strip turns amber at 80%.
+    llm_daily_token_budget: int = 0
 
     # Demo mode: replay pre-recorded agent responses (proposals, standup
     # digests, briefs, ask answers) instead of calling any LLM, so the full

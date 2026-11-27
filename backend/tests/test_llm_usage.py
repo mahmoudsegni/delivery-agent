@@ -134,6 +134,21 @@ def test_summarize_usage_empty():
         "days": 7,
         "calls": 0,
         "total_tokens": 0,
+        "today_tokens": 0,
+        "daily_budget": 0,
         "avg_latency_ms": 0,
         "by_feature": {},
     }
+
+
+def test_summarize_usage_today_tokens_and_budget():
+    """Issue #60: only rows since UTC midnight count as today's spend."""
+    rows = [row("ask", 400, 200, 0.0), row("ask", 600, 400, 2.0)]
+    out = summarize_usage(rows, 7, budget=1000)
+    assert out["today_tokens"] == 400  # the 2-day-old row excluded
+    assert out["daily_budget"] == 1000
+    assert out["total_tokens"] == 1000  # window total unaffected
+
+    off = summarize_usage(rows, 7)
+    assert off["daily_budget"] == 0
+    assert "today_tokens" in off
