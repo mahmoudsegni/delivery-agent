@@ -3,7 +3,7 @@ import {
   ChevronRight, Inbox, MessageCircleQuestion, Newspaper, TrendingUp, X,
 } from 'lucide-react';
 import {
-  useCodingStats, useDecisions, useIntegrationHealth, useLatestBrief, useLlmUsage, usePortfolio,
+  useCodingStats, useDecisions, useIntegrationHealth, useLatestBrief, useLlmUsage, usePortfolio, useSyncTasks,
 } from '../../hooks/useApi';
 import { budgetLevel, formatTokens, topFeatures } from '../../lib/llmUsage';
 import { syncStale } from '../../lib/syncHealth';
@@ -56,10 +56,14 @@ function BriefTeaser({ onOpenBriefs, onOpenAsk }: { onOpenBriefs: () => void; on
 }
 
 /** Amber, dismissible warning that the board is stale — the same stall signal
- *  #50 ships to Telegram, rendered where the team actually looks. */
+ *  #50 ships to Telegram, rendered where the team actually looks. The Sync
+ *  now button runs the shared hook (#59): on success its invalidations
+ *  (dashboardKeys.all covers integration health) refetch this query and the
+ *  banner clears itself; on failure it stays and the button resets. */
 function SyncStaleBanner() {
   const [dismissed, setDismissed] = useState(false);
   const { data, dataUpdatedAt } = useIntegrationHealth();
+  const sync = useSyncTasks();
   if (dismissed || !syncStale(data?.last_sync_at, data?.last_status)) return null;
   const hours = data?.last_sync_at
     ? (dataUpdatedAt - new Date(data.last_sync_at).getTime()) / 3600_000
@@ -69,6 +73,9 @@ function SyncStaleBanner() {
   return (
     <div className="command-stale-banner" role="alert">
       <span style={{ flex: 1 }}>⚠️ Backlog sync stalled{age}{err}</span>
+      <button onClick={() => sync.mutate()} disabled={sync.isPending}>
+        {sync.isPending ? 'Syncing…' : 'Sync now'}
+      </button>
       <button aria-label="Dismiss sync warning" onClick={() => setDismissed(true)}>
         <X size={14} strokeWidth={2.5} />
       </button>

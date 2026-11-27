@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import type { AskMessage, AutopilotUpdate, FeatureCreate, SprintCreate, TaskCreate, TaskUpdate } from '../types';
 import {
-  listTasks, createTask, updateTask, listTeamMembers, listAbsences, createAbsence, deleteAbsence, getSprints, createSprint,
+  listTasks, createTask, updateTask, syncTasks, listTeamMembers, listAbsences, createAbsence, deleteAbsence, getSprints, createSprint,
   getFeatures, createFeature, getCodingRepositories, createCodingRepository,
   createProposal, type CreateProposalBody, listProposals,
   getPortfolio, getStreams, getStream, approveProposal, rejectProposal,
@@ -124,19 +124,33 @@ export function useCreateTask() {
   });
 }
 
-export function useUpdateTask() {
+// A card move or a provider sync changes progress, team load and the
+// burndown — everything below tasks is downstream, so both mutations share
+// one invalidation set (same shape as useProposalRefresh).
+function useTaskDataRefresh() {
   const qc = useQueryClient();
+  return () => {
+    qc.invalidateQueries({ queryKey: taskKeys.all });
+    qc.invalidateQueries({ queryKey: dashboardKeys.all });
+    qc.invalidateQueries({ queryKey: burndownKeys.all });
+    qc.invalidateQueries({ queryKey: forecastKeys.all });
+  };
+}
+
+export function useUpdateTask() {
+  const refresh = useTaskDataRefresh();
   return useMutation({
     mutationFn: ({ id, body }: { id: string; body: TaskUpdate }) => updateTask(id, body),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: taskKeys.all });
-      // Moving a card changes progress, team load and the burndown — the
-      // dashboards would otherwise sit stale until their next poll.
-      qc.invalidateQueries({ queryKey: dashboardKeys.all });
-      qc.invalidateQueries({ queryKey: burndownKeys.all });
-      qc.invalidateQueries({ queryKey: forecastKeys.all });
-    },
+    onSuccess: refresh,
   });
+}
+
+// One shared sync control (board button + stale banner). A provider sync
+// changes everything a card move changes; the old board-local call skipped
+// dashboardKeys.all, which is why dashboards sat stale after a manual sync.
+export function useSyncTasks() {
+  const refresh = useTaskDataRefresh();
+  return useMutation({ mutationFn: syncTasks, onSuccess: refresh });
 }
 
 export function useCreateProposal() {

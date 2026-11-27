@@ -219,6 +219,13 @@ export interface ImportMockResponse {
   tasks: Task[];
 }
 
+/** POST /tasks/sync — provider pull result (backend SyncResponse). */
+export interface SyncResponse {
+  provider: string;
+  inserted: number;
+  updated: number;
+}
+
 export interface Proposal {
   id: string;
   type: string;

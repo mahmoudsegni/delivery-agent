@@ -1,11 +1,9 @@
 import { useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 import { RefreshCw, Plus, PanelRightClose, PanelRightOpen, X, CalendarRange } from 'lucide-react';
 import { COLUMNS, WIP_LIMITS, wipBreached } from '../../lib/boardColumns';
 import { subAreaColor, isDefect, typeChip } from '../../lib/subAreas';
-import { useTasks, useTeamMembers, useUpdateTask, useCodingRuns, useFeatures, taskKeys } from '../../hooks/useApi';
+import { useTasks, useTeamMembers, useUpdateTask, useSyncTasks, useCodingRuns, useFeatures } from '../../hooks/useApi';
 import type { Task } from '../../types';
-import { apiFetch } from '../../lib/api';
 import { Button } from '../../ui/Button';
 import { Spinner } from '../../ui/Spinner';
 import { AgentBadge } from '../../ui/AgentBadge';
@@ -36,7 +34,6 @@ const NEXT_STATUS: Record<string, { label: string; to: string }> = {
 };
 
 export function KanbanBoard({ showCapacity, setShowCapacity, teamFilter, onClearTeam, sprintId, openTaskId, setOpenTaskId }: KanbanBoardProps) {
-  const qc = useQueryClient();
   const { data: tasks = [], isLoading } = useTasks();
   const { data: members = [] } = useTeamMembers();
   const { data: agentRuns = [] } = useCodingRuns();
@@ -46,7 +43,6 @@ export function KanbanBoard({ showCapacity, setShowCapacity, teamFilter, onClear
   const runByTask = new Map(agentRuns.map((r) => [r.task_id, r]));
   const featureById = new Map(features.map((f) => [f.id, f.name]));
 
-  const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragOverCol, setDragOverCol] = useState<string | null>(null);
@@ -84,19 +80,15 @@ export function KanbanBoard({ showCapacity, setShowCapacity, teamFilter, onClear
   const allCards = inSprint.map(toCard);
   const cards = teamFilter ? allCards.filter((c) => c.team === teamFilter) : allCards;
 
-  const syncTfs = async () => {
-    setSyncing(true);
+  // Shared sync hook (issue #59): one call, invalidations cover tasks AND the
+  // dashboards/burndown/forecast. Message line stays verbatim.
+  const sync = useSyncTasks();
+  const syncTfs = () => {
     setSyncMsg(null);
-    try {
-      const r = await apiFetch('/api/v1/tasks/sync', { method: 'POST' });
-      const d = await r.json();
-      setSyncMsg(`${d.provider.toUpperCase()} sync: +${d.inserted} new, ${d.updated} updated`);
-      qc.invalidateQueries({ queryKey: taskKeys.all });
-    } catch (e: any) {
-      setSyncMsg(`Sync failed: ${e.message}`);
-    } finally {
-      setSyncing(false);
-    }
+    sync.mutate(undefined, {
+      onSuccess: (d) => setSyncMsg(`${d.provider.toUpperCase()} sync: +${d.inserted} new, ${d.updated} updated`),
+      onError: (e) => setSyncMsg(`Sync failed: ${(e as Error).message}`),
+    });
   };
 
   const move = (id: string, to: string) => updateTask.mutate({ id, body: { status: to as Task['status'] } });
@@ -123,8 +115,8 @@ export function KanbanBoard({ showCapacity, setShowCapacity, teamFilter, onClear
         )}
         <div className="header-actions">
           {syncMsg && <span className="mono" style={{ fontSize: 12, color: 'var(--ink-soft)', marginRight: 4 }}>{syncMsg}</span>}
-          <Button variant="ghost" onClick={syncTfs} disabled={syncing} icon={<RefreshCw size={15} strokeWidth={2.5} className={syncing ? 'spin-inline' : ''} />}>
-            {syncing ? 'Syncing…' : 'Sync from TFS'}
+          <Button variant="ghost" onClick={syncTfs} disabled={sync.isPending} icon={<RefreshCw size={15} strokeWidth={2.5} className={sync.isPending ? 'spin-inline' : ''} />}>
+            {sync.isPending ? 'Syncing…' : 'Sync from TFS'}
           </Button>
           <Button variant="secondary" onClick={() => setShowCapacity(!showCapacity)} icon={showCapacity ? <PanelRightClose size={15} strokeWidth={2.5} /> : <PanelRightOpen size={15} strokeWidth={2.5} />}>
             {showCapacity ? 'Hide' : 'Show'} Capacity

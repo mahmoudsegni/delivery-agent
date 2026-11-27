@@ -2,7 +2,7 @@
 import type {
   AgentRun, AskMessage, AskResponse, AutopilotState, AutopilotUpdate, Brief, CodingStats,
   DecisionItem, Feature, FeatureCreate, PortfolioResponse, Proposal, RepoCreateResponse,
-  RunEventsResponse, Sprint, SprintCreate, StreamDetail, StreamListItem, Task, TaskCreate, TaskUpdate, TeamMember,
+  RunEventsResponse, Sprint, SprintCreate, SyncResponse, StreamDetail, StreamListItem, Task, TaskCreate, TaskUpdate, TeamMember,
   MemberAbsence,
   CostByStreamResponse, DeliverySummary, FlowMetrics, GroomingSummary, IntegrationHealth, InvestmentProfileResponse, InvestmentTrendResponse, RoadmapResponse,
   LlmUsage,
@@ -81,6 +81,13 @@ export async function listTasks(limit = 3000): Promise<Task[]> {
 
 export async function createTask(body: TaskCreate): Promise<Task> {
   return json<Task>(await apiFetch('/api/v1/tasks', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(body) }));
+}
+
+// Provider sync. Routes through json<T> so FastAPI's detail messages (503
+// off-VPN, 429 rate-limit, 502 unreachable) surface as error.message — a raw
+// r.json() would not throw on those and leave the UI with no failure text.
+export async function syncTasks(): Promise<SyncResponse> {
+  return json<SyncResponse>(await apiFetch('/api/v1/tasks/sync', { method: 'POST', headers: JSON_HEADERS }));
 }
 
 export async function updateTask(id: string, body: TaskUpdate): Promise<Task> {
