@@ -11,6 +11,7 @@ Responsibilities:
 - ``/blockers``      -> deterministic stuck-work report from the heuristic detector (linked chats only).
 - ``/groom``         -> backlog hygiene: stale, unestimated, unassigned (linked chats only).
 - ``/team``          -> per-member capacity vs assigned hours for the active sprint (linked chats only).
+- ``/flow``          -> cycle time, throughput, aging WIP for the last 30 days (linked chats only).
 - ``/usage``         -> LLM token spend for the last 7 days, from the ledger (linked chats only).
 - ``/skip [reason]`` -> mark yourself out of the open standup round (no nudges, not missing).
 - ``/help``          -> list commands.
@@ -58,6 +59,7 @@ _HELP_TEXT = (
     "/forecast — will the active sprint finish on time?\n"
     "/blockers — what's stuck right now (no LLM needed)\n"
     "/team — capacity vs assigned load this sprint (no LLM needed)\n"
+    "/flow — cycle time, throughput, aging WIP (no LLM needed)\n"
     "/groom — backlog hygiene: stale, unestimated, unassigned (no LLM needed)\n"
     "/usage — LLM spend, last 7 days\n"
     "/skip <reason> — mark yourself out of today's standup\n"
@@ -203,6 +205,31 @@ def _render_usage(payload: dict) -> str:
     return reply
 
 
+_FLOW_WINDOW_DAYS = 30
+_AGING_CAP = 5
+
+
+def _render_flow(payload: dict) -> str:
+    """One header line + worst-first aging WIP, from FlowMetrics.model_dump()."""
+    if payload["cycle_time_p50"] is None and payload["history_starts"] is None:
+        return "Not enough transition history yet — /flow needs completed items."
+    segs = []
+    if payload["cycle_time_p50"] is not None:
+        segs.append(f"cycle p50 {payload['cycle_time_p50']}d")
+    if payload["cycle_time_p85"] is not None:
+        segs.append(f"p85 {payload['cycle_time_p85']}d")
+    if payload["lead_time_p50"] is not None:
+        segs.append(f"lead p50 {payload['lead_time_p50']}d")
+    segs.append(f"{sum(b['count'] for b in payload['throughput'])} done")
+    lines = [f"🌀 Flow ({payload['days']}d): " + " · ".join(segs)]
+    for item in payload["aging_wip"][:_AGING_CAP]:
+        line = f"⏳ {item['title']} · {item['days_in_status']:.0f}d in {item['status']}"
+        if item["assignee_name"]:
+            line += f" · {item['assignee_name']}"
+        lines.append(line)
+    return "\n".join(lines)[:4000]
+
+
 def _render_forecast(sprint: Sprint, payload: dict) -> str:
     """One compact block from the forecast payload (see forecast_service)."""
     if payload.get("done"):
@@ -325,6 +352,14 @@ async def handle_update(update: dict, client: TelegramClient) -> None:
                         if rows is None
                         else _render_team(rows)
                     )
+            elif command == "/flow":
+                if await service.member_for_chat(chat_id) is None:
+                    reply = _LINK_HINT
+                else:
+                    data = (
+                        await DashboardService(session).flow_metrics(days=_FLOW_WINDOW_DAYS)
+                    ).model_dump(mode="json")
+                    reply = _render_flow(data)
             elif command == "/usage":
                 if await service.member_for_chat(chat_id) is None:
                     reply = _LINK_HINT

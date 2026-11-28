@@ -17,7 +17,7 @@ from app.models.confidence import ConfidenceSnapshot
 from app.models.llm_call import LLMCall
 from app.models.sprint import Sprint
 from app.models.standup import StandupEntry, StandupRound
-from app.schemas.dashboard import TeamLoadRow
+from app.schemas.dashboard import AgingItem, FlowBucket, FlowMetrics, TeamLoadRow
 from app.services.agent_analysis_service import AgentAnalysisService
 from app.services.ask_service import AskService
 from app.services.brief_service import BriefService
@@ -873,3 +873,95 @@ async def test_grooming_data_is_backlog_wide_without_active_sprint():
     assert any(
         i["category"] == "unestimated" and i["ref"] == "#4131" for i in data["items"]
     )
+
+
+# ------------------------------------------------------------------
+# /flow (issue #61)
+# ------------------------------------------------------------------
+
+
+def _flow_metrics(**over) -> FlowMetrics:
+    base = FlowMetrics(
+        days=30,
+        history_starts=date(2026, 10, 29),
+        throughput=[
+            FlowBucket(date=date(2026, 11, 20), count=11),
+            FlowBucket(date=date(2026, 11, 21), count=7),
+        ],
+        cycle_time_p50=3.2,
+        cycle_time_p85=7.9,
+        lead_time_p50=5.0,
+        items=[],
+        cfd=[],
+        aging_wip=[
+            AgingItem(
+                task_id="1",
+                title="Fix checkout timeout",
+                status="in_progress",
+                days_in_status=4.6,
+                assignee_name="Sarah Chen",
+            ),
+            AgingItem(task_id="2", title="Migrate icons", status="review", days_in_status=2.3),
+        ],
+    )
+    for key, value in over.items():
+        setattr(base, key, value)
+    return base
+
+
+async def _run_flow(monkeypatch, metrics, *, member=True):
+    async def _flow(self, days=30):
+        return metrics
+
+    monkeypatch.setattr(telegram_bot.DashboardService, "flow_metrics", _flow)
+    return await _run(monkeypatch, "/flow", member=member)
+
+
+async def test_flow_renders_header_and_aging(monkeypatch):
+    client, recorded = await _run_flow(monkeypatch, _flow_metrics())
+    assert not recorded
+    reply = client.sent[0][1]
+    assert "🌀 Flow (30d): cycle p50 3.2d · p85 7.9d · lead p50 5.0d · 18 done" in reply
+    assert "⏳ Fix checkout timeout · 5d in in_progress · Sarah Chen" in reply
+    assert "⏳ Migrate icons · 2d in review" in reply
+    assert len(reply) < 4096
+
+
+async def test_flow_missing_segment_never_prints_none(monkeypatch):
+    client, _ = await _run_flow(monkeypatch, _flow_metrics(lead_time_p50=None))
+    reply = client.sent[0][1]
+    assert "lead" not in reply
+    assert "None" not in reply
+    assert "cycle p50 3.2d" in reply
+
+
+async def test_flow_empty_metrics(monkeypatch):
+    empty = FlowMetrics(days=30, throughput=[], items=[], cfd=[], aging_wip=[])
+    client, _ = await _run_flow(monkeypatch, empty)
+    assert client.sent[0][1] == (
+        "Not enough transition history yet — /flow needs completed items."
+    )
+
+
+async def test_flow_unlinked_chat(monkeypatch):
+    client, _ = await _run_flow(monkeypatch, _flow_metrics(), member=False)
+    assert "/start <code>" in client.sent[0][1]
+
+
+async def test_flow_caps_aging_at_five(monkeypatch):
+    metrics = _flow_metrics(
+        aging_wip=[
+            AgingItem(task_id=str(i), title=f"Item {i}", status="todo", days_in_status=float(i))
+            for i in range(7)
+        ]
+    )
+    client, _ = await _run_flow(monkeypatch, metrics)
+    reply = client.sent[0][1]
+    assert reply.count("⏳") == 5
+    assert "Item 5" not in reply and "Item 6" not in reply
+    assert len(reply) <= 4000
+
+
+async def test_help_lists_flow(monkeypatch):
+    client, _ = await _run(monkeypatch, "/help")
+    assert "/flow" in client.sent[0][1]
