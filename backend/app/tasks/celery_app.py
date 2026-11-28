@@ -54,6 +54,12 @@ if settings.morning_brief_enabled:
         "task": "app.tasks.brief_tasks.generate_morning_brief",
         "schedule": _crontab_from_str(settings.morning_brief_cron),
     }
+# LLM budget watchdog: DM when today's tokens cross the daily cap (issue #62).
+if settings.llm_daily_token_budget > 0:
+    _beat_schedule["llm-budget-check"] = {
+        "task": "app.tasks.llm_tasks.check_llm_budget_task",
+        "schedule": 1800.0,  # 30-min checks: a crossing lands within ~30 min
+    }
 # Periodic pull from the external task provider — only when explicitly enabled
 # (the mock provider would otherwise flood the DB with new tasks each run).
 if settings.task_sync_enabled:
@@ -81,6 +87,7 @@ celery_app = Celery(
         "app.tasks.coding_tasks",
         "app.tasks.brief_tasks",
         "app.tasks.autopilot_tasks",
+        "app.tasks.llm_tasks",
     ],
 )
 

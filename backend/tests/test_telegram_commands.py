@@ -8,6 +8,7 @@ stubbed at class level. Rendering runs for real on an in-memory Brief.
 from datetime import date, datetime, timezone
 import json
 
+from app.config import settings
 from app.integrations import standup_state
 from app.integrations import telegram_bot
 from app.integrations.telegram_bot import handle_update
@@ -655,6 +656,20 @@ def test_usage_token_formats_and_tiebreak():
         }
     )
     assert "top: big 1.5M · alpha 999 · beta 999" in reply
+
+
+async def test_usage_with_budget_appends_today_line(monkeypatch):
+    monkeypatch.setattr(settings, "llm_daily_token_budget", 10_000)
+    rows = [_call("brief", 8_200, 300), _call("ask", 3_100, 500)]
+    client, _ = await _run_usage(monkeypatch, rows=rows)
+    assert "today: 11.3k/10.0k (113%)" in client.sent[0][1]
+
+
+async def test_usage_zero_budget_keeps_reply_unchanged(monkeypatch):
+    monkeypatch.setattr(settings, "llm_daily_token_budget", 0)
+    rows = [_call("brief", 8_200, 300)]
+    client, _ = await _run_usage(monkeypatch, rows=rows)
+    assert "today:" not in client.sent[0][1]
 
 
 async def test_help_lists_usage(monkeypatch):

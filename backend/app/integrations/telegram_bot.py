@@ -167,7 +167,7 @@ async def _fetch_llm_usage(session) -> dict:
             )
         )
     ).scalars().all()
-    return summarize_usage(rows, _USAGE_DAYS)
+    return summarize_usage(rows, _USAGE_DAYS, budget=settings.llm_daily_token_budget)
 
 
 def _format_tokens(n: int) -> str:
@@ -188,11 +188,19 @@ def _render_usage(payload: dict) -> str:
     tops = " · ".join(
         f"{name} {_format_tokens(stats['total_tokens'])}" for name, stats in top
     )
-    return (
+    reply = (
         f"LLM usage (7d): {payload['calls']} calls"
         f" · {payload['total_tokens']:,} tokens"
         f" · avg {payload['avg_latency_ms']}ms\ntop: {tops}"
     )
+    budget = payload.get("daily_budget", 0)
+    if budget > 0:
+        today = payload.get("today_tokens", 0)
+        reply += (
+            f"\ntoday: {_format_tokens(today)}/{_format_tokens(budget)}"
+            f" ({round(today / budget * 100)}%)"
+        )
+    return reply
 
 
 def _render_forecast(sprint: Sprint, payload: dict) -> str:
